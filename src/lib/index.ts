@@ -1,7 +1,32 @@
 import * as child_process from "child_process";
 import * as readline from "readline";
-import { execSync } from "child_process";
 import * as fs from "fs";
+
+function fetch_id(options: any) {
+
+    if( !options ){ 
+        return;
+    }
+
+    if (!!options.unix_user) {
+
+        const unix_user = options.unix_user;
+
+        delete options.unix_user;
+
+        const get_id = (type: "u" | "g") =>
+            parseInt(
+                child_process.execSync(`id -${type} ${unix_user}`)
+                    .toString("utf8")
+                    .slice(0, -1)
+            );
+
+        options.uid = get_id("u");
+        options.gid = get_id("g");
+
+    }
+
+}
 
 export function colorize(str: string, color: "GREEN" | "RED" | "YELLOW"): string {
 
@@ -19,9 +44,73 @@ export function colorize(str: string, color: "GREEN" | "RED" | "YELLOW"): string
 
 }
 
-export function showLoad(message: string): {
+export function execSync(
+    cmd: string,
+    options?: child_process.ExecSyncOptions & { unix_user?: string },
+): string {
+
+    fetch_id(options);
+
+    return child_process.execSync(cmd, { ...(options as any || {}), "encoding": "utf8" });
+
+}
+
+export function execSyncTrace(
+    cmd: string, 
+    options?: child_process.ExecSyncOptions & { unix_user?: string },
+): void {
+
+    console.log(
+        colorize(`$ ${cmd} `, "YELLOW") + (!!options?`${JSON.stringify(options)}\n`:"")
+    );
+
+    fetch_id(options);
+
+    child_process.execSync(cmd, { ...(options as any || {}), "stdio": "inherit" });
+
+}
+
+
+export function exec(
+    cmd: string,
+    options?: child_process.ExecOptions & { unix_user?: string }
+): Promise<string> {
+
+    return new Promise(
+        async (resolve, reject) => {
+
+            fetch_id(options);
+
+            child_process.exec(
+                cmd,
+                { ...(options as any || {}), "encoding": "utf8" },
+                (error, stdout, stderr) => {
+
+                    if (!!error) {
+
+                        error["stderr"] = stderr;
+
+                        reject(error);
+
+                    } else {
+
+                        resolve(stdout as any);
+
+                    }
+
+
+                });
+
+        }
+    );
+
+}
+
+
+export function start_long_running_process(message: string): {
     onError(errorMessage: string): void;
     onSuccess(message?: string): void;
+    exec: typeof exec;
 } {
 
     process.stdout.write(`${message}... `);
@@ -58,43 +147,30 @@ export function showLoad(message: string): {
 
     };
 
+    const onError= errorMessage => onComplete(colorize(errorMessage, "RED"));
+    const onSuccess= message => onComplete(colorize(message || "ok", "GREEN"));
+
     return {
-        "onError": errorMessage => onComplete(colorize(errorMessage, "RED")),
-        "onSuccess": message => onComplete(colorize(message || "ok", "GREEN"))
+        onError,
+        onSuccess,
+        "exec": async function(...args){
+
+            try{
+
+                return await exec.apply(null, args);
+
+            }catch(error){
+
+                onError(error.message);
+
+                throw error;
+
+            }
+
+        }
     };
 
 };
-
-export namespace showLoad {
-
-    export function exec(
-        cmd: string,
-        onError: (errorMessage: string) => void
-    ): Promise<string> {
-
-        return new Promise(
-            (resolve, reject)=>
-                child_process.exec(cmd, (error, stdout, stderr)=>{
-
-                    if( !!error){
-
-                        onError(`${colorize("error with unix command:", "RED")} '${cmd}' message: ${error.message}`);
-
-                        reject(error);
-
-                    }else{
-
-                        resolve(`${stdout}`);
-
-                    }
-
-
-                })
-        );
-
-    }
-
-}
 
 
 export async function apt_get_install(
@@ -123,21 +199,21 @@ export async function apt_get_install(
     readline.clearLine(process.stdout, 0);
     process.stdout.write("\r");
 
-    let { onSuccess, onError } = showLoad(`Installing ${package_name} package`);
+    const { onSuccess, exec } = start_long_running_process(`Installing ${package_name} package`);
 
     try {
 
         if (apt_get_install.isFirst) {
 
-            await showLoad.exec("apt-get update", onError);
+            await exec("apt-get update");
 
             apt_get_install.isFirst = false;
 
         }
 
-        await showLoad.exec(`apt-get -y install ${package_name}`, onError);
+        await exec(`apt-get -y install ${package_name}`);
 
-    } catch(error) {
+    } catch (error) {
 
         apt_get_install.onError(error);
 
@@ -162,7 +238,7 @@ export namespace apt_get_install {
 
         const list: string[] = raw === "" ? [] : JSON.parse(raw);
 
-        if( !list.find( p => p === package_name) ){
+        if (!list.find(p => p === package_name)) {
 
             list.push(package_name);
 
@@ -220,7 +296,7 @@ export namespace apt_get_install {
 }
 
 export function exit_if_not_root(): void {
-    if( process.getuid() !== 0 ){
+    if (process.getuid() !== 0) {
 
         console.log("Error: This script require root privilege");
 

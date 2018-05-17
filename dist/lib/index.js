@@ -1,4 +1,12 @@
 "use strict";
+var __assign = (this && this.__assign) || Object.assign || function(t) {
+    for (var s, i = 1, n = arguments.length; i < n; i++) {
+        s = arguments[i];
+        for (var p in s) if (Object.prototype.hasOwnProperty.call(s, p))
+            t[p] = s[p];
+    }
+    return t;
+};
 var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
     return new (P || (P = Promise))(function (resolve, reject) {
         function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
@@ -37,8 +45,23 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
 Object.defineProperty(exports, "__esModule", { value: true });
 var child_process = require("child_process");
 var readline = require("readline");
-var child_process_1 = require("child_process");
 var fs = require("fs");
+function fetch_id(options) {
+    if (!options) {
+        return;
+    }
+    if (!!options.unix_user) {
+        var unix_user_1 = options.unix_user;
+        delete options.unix_user;
+        var get_id = function (type) {
+            return parseInt(child_process.execSync("id -" + type + " " + unix_user_1)
+                .toString("utf8")
+                .slice(0, -1));
+        };
+        options.uid = get_id("u");
+        options.gid = get_id("g");
+    }
+}
 function colorize(str, color) {
     var color_code = (function () {
         switch (color) {
@@ -50,7 +73,37 @@ function colorize(str, color) {
     return "" + color_code + str + "\u001B[0m";
 }
 exports.colorize = colorize;
-function showLoad(message) {
+function execSync(cmd, options) {
+    fetch_id(options);
+    return child_process.execSync(cmd, __assign({}, (options || {}), { "encoding": "utf8" }));
+}
+exports.execSync = execSync;
+function execSyncTrace(cmd, options) {
+    console.log(colorize("$ " + cmd + " ", "YELLOW") + (!!options ? JSON.stringify(options) + "\n" : ""));
+    fetch_id(options);
+    child_process.execSync(cmd, __assign({}, (options || {}), { "stdio": "inherit" }));
+}
+exports.execSyncTrace = execSyncTrace;
+function exec(cmd, options) {
+    var _this = this;
+    return new Promise(function (resolve, reject) { return __awaiter(_this, void 0, void 0, function () {
+        return __generator(this, function (_a) {
+            fetch_id(options);
+            child_process.exec(cmd, __assign({}, (options || {}), { "encoding": "utf8" }), function (error, stdout, stderr) {
+                if (!!error) {
+                    error["stderr"] = stderr;
+                    reject(error);
+                }
+                else {
+                    resolve(stdout);
+                }
+            });
+            return [2 /*return*/];
+        });
+    }); });
+}
+exports.exec = exec;
+function start_long_running_process(message) {
     process.stdout.write(message + "... ");
     var moveBack = (function () {
         var cp = message.length + 3;
@@ -68,32 +121,40 @@ function showLoad(message) {
         moveBack();
         process.stdout.write(message + "\n");
     };
+    var onError = function (errorMessage) { return onComplete(colorize(errorMessage, "RED")); };
+    var onSuccess = function (message) { return onComplete(colorize(message || "ok", "GREEN")); };
     return {
-        "onError": function (errorMessage) { return onComplete(colorize(errorMessage, "RED")); },
-        "onSuccess": function (message) { return onComplete(colorize(message || "ok", "GREEN")); }
+        onError: onError,
+        onSuccess: onSuccess,
+        "exec": function () {
+            var args = [];
+            for (var _i = 0; _i < arguments.length; _i++) {
+                args[_i] = arguments[_i];
+            }
+            return __awaiter(this, void 0, void 0, function () {
+                var error_1;
+                return __generator(this, function (_a) {
+                    switch (_a.label) {
+                        case 0:
+                            _a.trys.push([0, 2, , 3]);
+                            return [4 /*yield*/, exec.apply(null, args)];
+                        case 1: return [2 /*return*/, _a.sent()];
+                        case 2:
+                            error_1 = _a.sent();
+                            onError(error_1.message);
+                            throw error_1;
+                        case 3: return [2 /*return*/];
+                    }
+                });
+            });
+        }
     };
 }
-exports.showLoad = showLoad;
+exports.start_long_running_process = start_long_running_process;
 ;
-(function (showLoad) {
-    function exec(cmd, onError) {
-        return new Promise(function (resolve, reject) {
-            return child_process.exec(cmd, function (error, stdout, stderr) {
-                if (!!error) {
-                    onError(colorize("error with unix command:", "RED") + " '" + cmd + "' message: " + error.message);
-                    reject(error);
-                }
-                else {
-                    resolve("" + stdout);
-                }
-            });
-        });
-    }
-    showLoad.exec = exec;
-})(showLoad = exports.showLoad || (exports.showLoad = {}));
 function apt_get_install(package_name, prog) {
     return __awaiter(this, void 0, void 0, function () {
-        var _a, onSuccess, onError, error_1;
+        var _a, onSuccess, exec, error_2;
         return __generator(this, function (_b) {
             switch (_b.label) {
                 case 0:
@@ -108,23 +169,23 @@ function apt_get_install(package_name, prog) {
                     }
                     readline.clearLine(process.stdout, 0);
                     process.stdout.write("\r");
-                    _a = showLoad("Installing " + package_name + " package"), onSuccess = _a.onSuccess, onError = _a.onError;
+                    _a = start_long_running_process("Installing " + package_name + " package"), onSuccess = _a.onSuccess, exec = _a.exec;
                     _b.label = 1;
                 case 1:
                     _b.trys.push([1, 5, , 6]);
                     if (!apt_get_install.isFirst) return [3 /*break*/, 3];
-                    return [4 /*yield*/, showLoad.exec("apt-get update", onError)];
+                    return [4 /*yield*/, exec("apt-get update")];
                 case 2:
                     _b.sent();
                     apt_get_install.isFirst = false;
                     _b.label = 3;
-                case 3: return [4 /*yield*/, showLoad.exec("apt-get -y install " + package_name, onError)];
+                case 3: return [4 /*yield*/, exec("apt-get -y install " + package_name)];
                 case 4:
                     _b.sent();
                     return [3 /*break*/, 6];
                 case 5:
-                    error_1 = _b.sent();
-                    apt_get_install.onError(error_1);
+                    error_2 = _b.sent();
+                    apt_get_install.onError(error_2);
                     return [3 /*break*/, 6];
                 case 6:
                     apt_get_install.onInstallSuccess(package_name);
@@ -137,7 +198,7 @@ function apt_get_install(package_name, prog) {
 exports.apt_get_install = apt_get_install;
 (function (apt_get_install) {
     function record_installed_package(file_json_path, package_name) {
-        child_process_1.execSync("touch " + file_json_path);
+        execSync("touch " + file_json_path);
         var raw = fs.readFileSync(file_json_path).toString("utf8");
         var list = raw === "" ? [] : JSON.parse(raw);
         if (!list.find(function (p) { return p === package_name; })) {
