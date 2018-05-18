@@ -2,6 +2,20 @@ import * as child_process from "child_process";
 import * as readline from "readline";
 import * as fs from "fs";
 
+let trace= false;
+
+export function enableTrace(): void {
+    trace= true;
+}
+
+function traceExec(cmd: string, options: any){
+
+    console.log(
+        colorize(`$ ${cmd} `, "YELLOW") + (!!options?`${JSON.stringify(options)}\n`:"")
+    );
+
+}
+
 function fetch_id(options: any) {
 
     if( !options ){ 
@@ -49,6 +63,12 @@ export function execSync(
     options?: child_process.ExecSyncOptions & { unix_user?: string },
 ): string {
 
+    if( trace ){
+
+        traceExec(cmd, options);
+
+    }
+
     fetch_id(options);
 
     return child_process.execSync(cmd, { ...(options as any || {}), "encoding": "utf8" });
@@ -60,9 +80,7 @@ export function execSyncTrace(
     options?: child_process.ExecSyncOptions & { unix_user?: string },
 ): void {
 
-    console.log(
-        colorize(`$ ${cmd} `, "YELLOW") + (!!options?`${JSON.stringify(options)}\n`:"")
-    );
+    traceExec(cmd, options);
 
     fetch_id(options);
 
@@ -75,6 +93,12 @@ export function exec(
     cmd: string,
     options?: child_process.ExecOptions & { unix_user?: string }
 ): Promise<string> {
+
+    if( trace ){
+
+        traceExec(cmd, options);
+
+    }
 
     return new Promise(
         async (resolve, reject) => {

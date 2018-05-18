@@ -39,6 +39,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 var scriptLib = require("../lib");
 console.log(scriptLib.colorize("OK", "GREEN"));
 (function () { return __awaiter(_this, void 0, void 0, function () {
+    var _this = this;
     var _a, exec, onSuccess;
     return __generator(this, function (_b) {
         switch (_b.label) {
@@ -51,6 +52,28 @@ console.log(scriptLib.colorize("OK", "GREEN"));
                 scriptLib.execSyncTrace("ls -l | grep foo.txt", { "cwd": "/home/pi" });
                 scriptLib.execSyncTrace("cat foo.txt", { "cwd": "/home/pi" });
                 scriptLib.execSync("rm /home/pi/foo.txt");
+                scriptLib.enableTrace();
+                console.log(scriptLib.execSync("echo 'hello word'"));
+                scriptLib.exit_if_not_root();
+                return [4 /*yield*/, scriptLib.apt_get_install("git", "git")];
+            case 2:
+                _b.sent();
+                return [4 /*yield*/, (function () { return __awaiter(_this, void 0, void 0, function () {
+                        var _a, exec, onSuccess;
+                        return __generator(this, function (_b) {
+                            switch (_b.label) {
+                                case 0:
+                                    _a = scriptLib.start_long_running_process("We are doing foo bar"), exec = _a.exec, onSuccess = _a.onSuccess;
+                                    return [4 /*yield*/, exec("echo 'foo bar baz'")];
+                                case 1:
+                                    _b.sent();
+                                    onSuccess("DONE");
+                                    return [2 /*return*/];
+                            }
+                        });
+                    }); })()];
+            case 3:
+                _b.sent();
                 return [2 /*return*/];
         }
     });

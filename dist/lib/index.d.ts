@@ -1,5 +1,6 @@
 /// <reference types="node" />
 import * as child_process from "child_process";
+export declare function enableTrace(): void;
 export declare function colorize(str: string, color: "GREEN" | "RED" | "YELLOW"): string;
 export declare function execSync(cmd: string, options?: child_process.ExecSyncOptions & {
     unix_user?: string;

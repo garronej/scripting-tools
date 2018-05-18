@@ -46,6 +46,14 @@ Object.defineProperty(exports, "__esModule", { value: true });
 var child_process = require("child_process");
 var readline = require("readline");
 var fs = require("fs");
+var trace = false;
+function enableTrace() {
+    trace = true;
+}
+exports.enableTrace = enableTrace;
+function traceExec(cmd, options) {
+    console.log(colorize("$ " + cmd + " ", "YELLOW") + (!!options ? JSON.stringify(options) + "\n" : ""));
+}
 function fetch_id(options) {
     if (!options) {
         return;
@@ -74,18 +82,24 @@ function colorize(str, color) {
 }
 exports.colorize = colorize;
 function execSync(cmd, options) {
+    if (trace) {
+        traceExec(cmd, options);
+    }
     fetch_id(options);
     return child_process.execSync(cmd, __assign({}, (options || {}), { "encoding": "utf8" }));
 }
 exports.execSync = execSync;
 function execSyncTrace(cmd, options) {
-    console.log(colorize("$ " + cmd + " ", "YELLOW") + (!!options ? JSON.stringify(options) + "\n" : ""));
+    traceExec(cmd, options);
     fetch_id(options);
     child_process.execSync(cmd, __assign({}, (options || {}), { "stdio": "inherit" }));
 }
 exports.execSyncTrace = execSyncTrace;
 function exec(cmd, options) {
     var _this = this;
+    if (trace) {
+        traceExec(cmd, options);
+    }
     return new Promise(function (resolve, reject) { return __awaiter(_this, void 0, void 0, function () {
         return __generator(this, function (_a) {
             fetch_id(options);
