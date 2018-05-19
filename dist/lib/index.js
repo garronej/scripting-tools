@@ -215,7 +215,7 @@ exports.apt_get_install_if_missing = apt_get_install_if_missing;
 })(apt_get_install_if_missing = exports.apt_get_install_if_missing || (exports.apt_get_install_if_missing = {}));
 function apt_get_install(package_name) {
     return __awaiter(this, void 0, void 0, function () {
-        var _a, onSuccess, exec, error_2;
+        var _a, onSuccess, exec, was_installed_before, error_2;
         return __generator(this, function (_b) {
             switch (_b.label) {
                 case 0:
@@ -229,16 +229,20 @@ function apt_get_install(package_name) {
                     _b.sent();
                     apt_get_install.isFirst = false;
                     _b.label = 3;
-                case 3: return [4 /*yield*/, exec("apt-get -y install " + package_name)];
+                case 3:
+                    was_installed_before = apt_get_install_if_missing.isPkgInstalled("package_name");
+                    return [4 /*yield*/, exec("apt-get -y install " + package_name)];
                 case 4:
                     _b.sent();
+                    if (!was_installed_before) {
+                        apt_get_install.onInstallSuccess(package_name);
+                    }
                     return [3 /*break*/, 6];
                 case 5:
                     error_2 = _b.sent();
                     apt_get_install.onError(error_2);
                     return [3 /*break*/, 6];
                 case 6:
-                    apt_get_install.onInstallSuccess(package_name);
                     onSuccess("DONE");
                     return [2 /*return*/];
             }
