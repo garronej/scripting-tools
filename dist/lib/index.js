@@ -166,24 +166,60 @@ function start_long_running_process(message) {
 }
 exports.start_long_running_process = start_long_running_process;
 ;
-function apt_get_install(package_name, prog) {
+function apt_get_install_if_missing(package_name, prog) {
     return __awaiter(this, void 0, void 0, function () {
-        var _a, onSuccess, exec, error_2;
-        return __generator(this, function (_b) {
-            switch (_b.label) {
+        return __generator(this, function (_a) {
+            switch (_a.label) {
                 case 0:
                     process.stdout.write("Looking for " + package_name + " ... ");
-                    if (!!prog && apt_get_install.doesHaveProg(prog)) {
+                    if (!!prog && apt_get_install_if_missing.doesHaveProg(prog)) {
                         console.log(prog + " executable found. " + colorize("OK", "GREEN"));
                         return [2 /*return*/];
                     }
-                    if (apt_get_install.isPkgInstalled(package_name)) {
+                    if (apt_get_install_if_missing.isPkgInstalled(package_name)) {
                         console.log(package_name + " is installed. " + colorize("OK", "GREEN"));
                         return [2 /*return*/];
                     }
                     readline.clearLine(process.stdout, 0);
                     process.stdout.write("\r");
-                    _a = start_long_running_process("Installing " + package_name + " package"), onSuccess = _a.onSuccess, exec = _a.exec;
+                    return [4 /*yield*/, apt_get_install(package_name)];
+                case 1: return [2 /*return*/, _a.sent()];
+            }
+        });
+    });
+}
+exports.apt_get_install_if_missing = apt_get_install_if_missing;
+(function (apt_get_install_if_missing) {
+    function isPkgInstalled(package_name) {
+        try {
+            console.assert(!!child_process.execSync("dpkg-query -W -f='${Status}' " + package_name + " 2>/dev/null")
+                .toString("utf8")
+                .match(/^install ok installed$/));
+        }
+        catch (_a) {
+            return false;
+        }
+        return true;
+    }
+    apt_get_install_if_missing.isPkgInstalled = isPkgInstalled;
+    function doesHaveProg(prog) {
+        try {
+            child_process.execSync("which " + prog);
+        }
+        catch (_a) {
+            return false;
+        }
+        return true;
+    }
+    apt_get_install_if_missing.doesHaveProg = doesHaveProg;
+})(apt_get_install_if_missing = exports.apt_get_install_if_missing || (exports.apt_get_install_if_missing = {}));
+function apt_get_install(package_name) {
+    return __awaiter(this, void 0, void 0, function () {
+        var _a, onSuccess, exec, error_2;
+        return __generator(this, function (_b) {
+            switch (_b.label) {
+                case 0:
+                    _a = start_long_running_process("Installing or upgrading " + package_name + " package"), onSuccess = _a.onSuccess, exec = _a.exec;
                     _b.label = 1;
                 case 1:
                     _b.trys.push([1, 5, , 6]);
@@ -211,6 +247,7 @@ function apt_get_install(package_name, prog) {
 }
 exports.apt_get_install = apt_get_install;
 (function (apt_get_install) {
+    apt_get_install.isFirst = true;
     function record_installed_package(file_json_path, package_name) {
         execSync("touch " + file_json_path);
         var raw = fs.readFileSync(file_json_path).toString("utf8");
@@ -223,29 +260,6 @@ exports.apt_get_install = apt_get_install;
     apt_get_install.record_installed_package = record_installed_package;
     apt_get_install.onError = function (error) { throw error; };
     apt_get_install.onInstallSuccess = function (package_name) { };
-    apt_get_install.isFirst = true;
-    function isPkgInstalled(package_name) {
-        try {
-            console.assert(!!child_process.execSync("dpkg-query -W -f='${Status}' " + package_name + " 2>/dev/null")
-                .toString("utf8")
-                .match(/^install ok installed$/));
-        }
-        catch (_a) {
-            return false;
-        }
-        return true;
-    }
-    apt_get_install.isPkgInstalled = isPkgInstalled;
-    function doesHaveProg(prog) {
-        try {
-            child_process.execSync("which " + prog);
-        }
-        catch (_a) {
-            return false;
-        }
-        return true;
-    }
-    apt_get_install.doesHaveProg = doesHaveProg;
 })(apt_get_install = exports.apt_get_install || (exports.apt_get_install = {}));
 function exit_if_not_root() {
     if (process.getuid() !== 0) {

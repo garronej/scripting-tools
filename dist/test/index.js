@@ -55,7 +55,7 @@ console.log(scriptLib.colorize("OK", "GREEN"));
                 scriptLib.enableTrace();
                 console.log(scriptLib.execSync("echo 'hello word'"));
                 scriptLib.exit_if_not_root();
-                return [4 /*yield*/, scriptLib.apt_get_install("git", "git")];
+                return [4 /*yield*/, scriptLib.apt_get_install_if_missing("git", "git")];
             case 2:
                 _b.sent();
                 return [4 /*yield*/, (function () { return __awaiter(_this, void 0, void 0, function () {

@@ -196,15 +196,15 @@ export function start_long_running_process(message: string): {
 
 };
 
-
-export async function apt_get_install(
+export async function apt_get_install_if_missing(
     package_name: string,
     prog?: string
 ) {
 
     process.stdout.write(`Looking for ${package_name} ... `);
 
-    if (!!prog && apt_get_install.doesHaveProg(prog)) {
+
+    if (!!prog && apt_get_install_if_missing.doesHaveProg(prog)) {
 
         console.log(`${prog} executable found. ${colorize("OK", "GREEN")}`);
 
@@ -212,7 +212,7 @@ export async function apt_get_install(
 
     }
 
-    if (apt_get_install.isPkgInstalled(package_name)) {
+    if (apt_get_install_if_missing.isPkgInstalled(package_name)) {
 
         console.log(`${package_name} is installed. ${colorize("OK", "GREEN")}`);
 
@@ -223,63 +223,12 @@ export async function apt_get_install(
     readline.clearLine(process.stdout, 0);
     process.stdout.write("\r");
 
-    const { onSuccess, exec } = start_long_running_process(`Installing ${package_name} package`);
+    return await apt_get_install(package_name);
 
-    try {
-
-        if (apt_get_install.isFirst) {
-
-            await exec("apt-get update");
-
-            apt_get_install.isFirst = false;
-
-        }
-
-        await exec(`apt-get -y install ${package_name}`);
-
-    } catch (error) {
-
-        apt_get_install.onError(error);
-
-    }
-
-    apt_get_install.onInstallSuccess(package_name);
-
-    onSuccess("DONE");
 
 }
 
-export namespace apt_get_install {
-
-    export function record_installed_package(
-        file_json_path: string,
-        package_name: string
-    ): void {
-
-        execSync(`touch ${file_json_path}`);
-
-        const raw = fs.readFileSync(file_json_path).toString("utf8");
-
-        const list: string[] = raw === "" ? [] : JSON.parse(raw);
-
-        if (!list.find(p => p === package_name)) {
-
-            list.push(package_name);
-
-            fs.writeFileSync(
-                file_json_path,
-                Buffer.from(JSON.stringify(list, null, 2), "utf8")
-            );
-
-        }
-
-    }
-
-    export let onError = (error: Error) => { throw error };
-
-    export let onInstallSuccess = (package_name: string): void => { };
-
-    export let isFirst = true;
+export namespace apt_get_install_if_missing {
 
     export function isPkgInstalled(package_name: string): boolean {
 
@@ -316,6 +265,68 @@ export namespace apt_get_install {
         return true;
 
     }
+
+}
+
+export async function apt_get_install( package_name: string) {
+
+    const { onSuccess, exec } = start_long_running_process(`Installing or upgrading ${package_name} package`);
+
+    try {
+
+        if (apt_get_install.isFirst) {
+
+            await exec("apt-get update");
+
+            apt_get_install.isFirst = false;
+
+        }
+
+        await exec(`apt-get -y install ${package_name}`);
+
+    } catch (error) {
+
+        apt_get_install.onError(error);
+
+    }
+
+    apt_get_install.onInstallSuccess(package_name);
+
+    onSuccess("DONE");
+
+}
+
+export namespace apt_get_install {
+
+    export let isFirst = true;
+
+    export function record_installed_package(
+        file_json_path: string,
+        package_name: string
+    ): void {
+
+        execSync(`touch ${file_json_path}`);
+
+        const raw = fs.readFileSync(file_json_path).toString("utf8");
+
+        const list: string[] = raw === "" ? [] : JSON.parse(raw);
+
+        if (!list.find(p => p === package_name)) {
+
+            list.push(package_name);
+
+            fs.writeFileSync(
+                file_json_path,
+                Buffer.from(JSON.stringify(list, null, 2), "utf8")
+            );
+
+        }
+
+    }
+
+    export let onError = (error: Error) => { throw error };
+
+    export let onInstallSuccess = (package_name: string): void => { };
 
 }
 

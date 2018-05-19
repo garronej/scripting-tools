@@ -16,13 +16,16 @@ export declare function start_long_running_process(message: string): {
     onSuccess(message?: string): void;
     exec: typeof exec;
 };
-export declare function apt_get_install(package_name: string, prog?: string): Promise<void>;
+export declare function apt_get_install_if_missing(package_name: string, prog?: string): Promise<void>;
+export declare namespace apt_get_install_if_missing {
+    function isPkgInstalled(package_name: string): boolean;
+    function doesHaveProg(prog: string): boolean;
+}
+export declare function apt_get_install(package_name: string): Promise<void>;
 export declare namespace apt_get_install {
+    let isFirst: boolean;
     function record_installed_package(file_json_path: string, package_name: string): void;
     let onError: (error: Error) => never;
     let onInstallSuccess: (package_name: string) => void;
-    let isFirst: boolean;
-    function isPkgInstalled(package_name: string): boolean;
-    function doesHaveProg(prog: string): boolean;
 }
 export declare function exit_if_not_root(): void;

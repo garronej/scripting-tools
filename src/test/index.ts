@@ -22,7 +22,7 @@ console.log(scriptLib.colorize("OK", "GREEN"));
 
     scriptLib.exit_if_not_root();
 
-    await scriptLib.apt_get_install("git", "git");
+    await scriptLib.apt_get_install_if_missing("git", "git");
 
     await (async ()=>{
 
