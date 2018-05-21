@@ -282,7 +282,7 @@ export async function apt_get_install( package_name: string) {
 
         }
 
-        const was_installed_before= apt_get_install_if_missing.isPkgInstalled("package_name");
+        const was_installed_before= apt_get_install_if_missing.isPkgInstalled(package_name);
 
         await exec(`apt-get -y install ${package_name}`);
 
