@@ -230,7 +230,7 @@ function apt_get_install(package_name) {
                     apt_get_install.isFirst = false;
                     _b.label = 3;
                 case 3:
-                    was_installed_before = apt_get_install_if_missing.isPkgInstalled("package_name");
+                    was_installed_before = apt_get_install_if_missing.isPkgInstalled(package_name);
                     return [4 /*yield*/, exec("apt-get -y install " + package_name)];
                 case 4:
                     _b.sent();
