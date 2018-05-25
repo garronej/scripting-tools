@@ -47,6 +47,10 @@ var child_process = require("child_process");
 var readline = require("readline");
 var fs = require("fs");
 var trace = false;
+/**
+ * After this function is called every call to execSync
+ * or exec will print the unix commands being executed.
+ * */
 function enableTrace() {
     trace = true;
 }
@@ -81,6 +85,16 @@ function colorize(str, color) {
     return "" + color_code + str + "\u001B[0m";
 }
 exports.colorize = colorize;
+/**
+ *
+ * The stderr is forwarded to the console realtime.
+ *
+ * The returned value is the concatenated data received on stdout.
+ *
+ * If the return code of the cmd is not 0 an exception is thrown
+ * and the message cmd + the concatenated data received on stderr.
+ *
+ */
 function execSync(cmd, options) {
     if (trace) {
         traceExec(cmd, options);
@@ -89,12 +103,35 @@ function execSync(cmd, options) {
     return child_process.execSync(cmd, __assign({}, (options || {}), { "encoding": "utf8" }));
 }
 exports.execSync = execSync;
+/**
+ * The cmd is printed before execution
+ * stdout and stderr are forwarded to the console realtime.
+ * Return nothing.
+ *
+ * stdio is set to "inherit" and thus should not be redefined.
+ *
+ */
 function execSyncTrace(cmd, options) {
     traceExec(cmd, options);
     fetch_id(options);
     child_process.execSync(cmd, __assign({}, (options || {}), { "stdio": "inherit" }));
 }
 exports.execSyncTrace = execSyncTrace;
+/**
+ *
+ * Like execSync but stderr is not forwarded.
+ * WARNING: If mean that when the cmd return 0
+ * all data that may have been wrote on stderr
+ * are lost into oblivion.
+ *
+ * stdio is set to "pipe" and thus should not be redefined.
+ *
+ */
+function execSyncQuiet(cmd, options) {
+    return execSync(cmd, __assign({}, (options || {}), { "stdio": "pipe" }));
+}
+exports.execSyncQuiet = execSyncQuiet;
+/** Same as execSync but async */
 function exec(cmd, options) {
     var _this = this;
     if (trace) {

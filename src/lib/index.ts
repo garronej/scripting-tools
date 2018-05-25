@@ -4,6 +4,10 @@ import * as fs from "fs";
 
 let trace= false;
 
+/** 
+ * After this function is called every call to execSync 
+ * or exec will print the unix commands being executed. 
+ * */
 export function enableTrace(): void {
     trace= true;
 }
@@ -58,6 +62,16 @@ export function colorize(str: string, color: "GREEN" | "RED" | "YELLOW"): string
 
 }
 
+/**
+ * 
+ * The stderr is forwarded to the console realtime.
+ * 
+ * The returned value is the concatenated data received on stdout.
+ * 
+ * If the return code of the cmd is not 0 an exception is thrown
+ * and the message cmd + the concatenated data received on stderr.
+ * 
+ */
 export function execSync(
     cmd: string,
     options?: child_process.ExecSyncOptions & { unix_user?: string },
@@ -75,6 +89,14 @@ export function execSync(
 
 }
 
+/** 
+ * The cmd is printed before execution
+ * stdout and stderr are forwarded to the console realtime.
+ * Return nothing.
+ * 
+ * stdio is set to "inherit" and thus should not be redefined.
+ * 
+ */
 export function execSyncTrace(
     cmd: string, 
     options?: child_process.ExecSyncOptions & { unix_user?: string },
@@ -88,7 +110,27 @@ export function execSyncTrace(
 
 }
 
+/**
+ * 
+ * Like execSync but stderr is not forwarded.
+ * WARNING: If mean that when the cmd return 0
+ * all data that may have been wrote on stderr
+ * are lost into oblivion.
+ * 
+ * stdio is set to "pipe" and thus should not be redefined.
+ * 
+ */
+export function execSyncQuiet(
+    cmd: string,
+    options?: child_process.ExecSyncOptions & { unix_user?: string },
+): string{
 
+    return execSync(cmd, { ...(options as any || {}), "stdio": "pipe" });
+
+}
+
+
+/** Same as execSync but async */
 export function exec(
     cmd: string,
     options?: child_process.ExecOptions & { unix_user?: string }
@@ -129,7 +171,6 @@ export function exec(
     );
 
 }
-
 
 export function start_long_running_process(message: string): {
     onError(errorMessage: string): void;

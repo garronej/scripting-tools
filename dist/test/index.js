@@ -44,6 +44,7 @@ console.log(scriptLib.colorize("OK", "GREEN"));
     return __generator(this, function (_b) {
         switch (_b.label) {
             case 0:
+                console.assert(scriptLib.execSyncQuiet("echo \"foo\" && ls /doNotExist || echo \"bar\"") === "foo\nbar\n");
                 _a = scriptLib.start_long_running_process("We are going to do something that take time"), exec = _a.exec, onSuccess = _a.onSuccess;
                 return [4 /*yield*/, exec("cd /home/pi && sleep 3 && echo 'foo' > foo.txt", { "unix_user": "pi" })];
             case 1:

@@ -2,9 +2,11 @@ import * as scriptLib from "../lib";
 
 console.log(scriptLib.colorize("OK", "GREEN"));
 
-(async ()=>{
+(async () => {
 
-    const { exec, onSuccess }= scriptLib.start_long_running_process("We are going to do something that take time");
+    console.assert(scriptLib.execSyncQuiet(`echo "foo" && ls /doNotExist || echo "bar"`) === "foo\nbar\n");
+
+    const { exec, onSuccess } = scriptLib.start_long_running_process("We are going to do something that take time");
 
     await exec("cd /home/pi && sleep 3 && echo 'foo' > foo.txt", { "unix_user": "pi" });
 
@@ -24,9 +26,9 @@ console.log(scriptLib.colorize("OK", "GREEN"));
 
     await scriptLib.apt_get_install_if_missing("git", "git");
 
-    await (async ()=>{
+    await (async () => {
 
-        const { exec, onSuccess }= scriptLib.start_long_running_process("We are doing foo bar");
+        const { exec, onSuccess } = scriptLib.start_long_running_process("We are doing foo bar");
 
         await exec("echo 'foo bar baz'");
 
