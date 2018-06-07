@@ -42,6 +42,16 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
         if (op[0] & 5) throw op[1]; return { value: op[0] ? op[1] : void 0, done: true };
     }
 };
+var __values = (this && this.__values) || function (o) {
+    var m = typeof Symbol === "function" && o[Symbol.iterator], i = 0;
+    if (m) return m.call(o);
+    return {
+        next: function () {
+            if (o && i >= o.length) o = void 0;
+            return { value: o && o[i++], done: !o };
+        }
+    };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 var child_process = require("child_process");
 var readline = require("readline");
@@ -337,3 +347,235 @@ function find_module_path(module_name, module_dir_path) {
     }
 }
 exports.find_module_path = find_module_path;
+/**
+ *
+ * Test if two file of folder are same.
+ * Does not consider stat ( ownership and permission ).
+ * transparent handling of symlinks.
+ *
+ * Example
+ *
+ * /foo1/bar/file.txt
+ * /foo2/bar/file.txt
+ *
+ * to compare the two version of file.txt
+ * call with "/foo1", "/foo2", "./bar/file.txt";
+ * or with "/foo1/bar/file.txt", "/foo2/bar/file.txt"
+ *
+ * @param relative_from_path1 absolute path ex: '/foo1'
+ * @param relative_from_path2 absolute path ex: '/foo2'
+ * @param relative_to_path relative path ex: './bar/file.txt" or 'bar/file.txt'
+ * for convenience relative_to_path can be absolute as long as it has relative_from_path1
+ * or relative_from_path2 as parent.
+ *
+ */
+function fs_areSame(relative_from_path1, relative_from_path2, relative_to_path) {
+    if (relative_to_path === void 0) { relative_to_path = "."; }
+    if (path.isAbsolute(relative_to_path)) {
+        try {
+            for (var _a = __values([relative_from_path1, relative_from_path2]), _b = _a.next(); !_b.done; _b = _a.next()) {
+                var relative_from_path = _b.value;
+                if (relative_to_path.startsWith(relative_from_path)) {
+                    relative_to_path = path.relative(relative_from_path, relative_to_path);
+                }
+            }
+        }
+        catch (e_1_1) { e_1 = { error: e_1_1 }; }
+        finally {
+            try {
+                if (_b && !_b.done && (_c = _a.return)) _c.call(_a);
+            }
+            finally { if (e_1) throw e_1.error; }
+        }
+        throw new Error();
+    }
+    try {
+        execSyncQuiet([
+            "diff -r",
+            path.join(relative_from_path1, relative_to_path),
+            path.join(relative_from_path2, relative_to_path)
+        ].join(" "));
+    }
+    catch (_d) {
+        return false;
+    }
+    return true;
+    var e_1, _c;
+}
+exports.fs_areSame = fs_areSame;
+/**
+ *
+ * Move or copy file of folder.
+ * -If dest is identical to source nothing is copied nor moved.
+ * -If dest exist and is different of source it will be deleted prior to proceeding with action.
+ * -In move mode if dest identical to source source will be removed.
+ * -When copy is effectively performed the stat are conserved.
+ * -If dirname of dest does not exist in fs, it will be created.
+ * -Unlike cp or mv "/src/file.txt" "/dest" will NOT place file.txt in dest but dest will become file.txt
+ *
+ * calling [action] "/src/foo" "/dst/foo" is equivalent
+ * to calling [action] "/src" "/dst" "./foo" ( or "foo" )
+ * or [action] "/src" "/dst" "src/foo"
+ * or [action] "/src" "/dst" "dst/foo"
+ *
+ */
+function fs_move(action, relative_from_path_src, relative_from_path_dest, relative_to_path) {
+    if (relative_to_path === void 0) { relative_to_path = "."; }
+    if (path.isAbsolute(relative_to_path)) {
+        try {
+            for (var _a = __values([relative_from_path_src, relative_from_path_dest]), _b = _a.next(); !_b.done; _b = _a.next()) {
+                var relative_from_path = _b.value;
+                if (relative_to_path.startsWith(relative_from_path)) {
+                    relative_to_path = path.relative(relative_from_path, relative_to_path);
+                }
+            }
+        }
+        catch (e_2_1) { e_2 = { error: e_2_1 }; }
+        finally {
+            try {
+                if (_b && !_b.done && (_c = _a.return)) _c.call(_a);
+            }
+            finally { if (e_2) throw e_2.error; }
+        }
+        throw new Error();
+    }
+    var src_path = path.join(relative_from_path_src, relative_to_path);
+    var dst_path = path.join(relative_from_path_dest, relative_to_path);
+    if (!fs_areSame(src_path, dst_path)) {
+        if (!fs.existsSync(dst_path)) {
+            execSync("mkdir -p " + dst_path);
+        }
+        execSync("rm -rf " + dst_path);
+        execSync([
+            action === "COPY" ? "cp -rp" : "mv",
+            src_path,
+            dst_path
+        ].join(" "));
+    }
+    if (action === "MOVE") {
+        execSync("rm -rf " + src_path);
+    }
+    var e_2, _c;
+}
+exports.fs_move = fs_move;
+/**
+ * Download and extract a tarball.
+ *
+ * Example
+ *
+ * website.com/rel.tar.gz
+ * ./file1.txt
+ * ./dir/file2.txt
+ *
+ * /foo/
+ * ./file3.txt
+ * ./dir/file4.txt
+ *
+ * calling with "website.com/rel.tar.gz", "MERGE" will result in:
+ *
+ * /foo/
+ * ./file1.txt
+ * ./file3.txt
+ * ./dir/file4.txt
+ *
+ * calling with "website.com/rel.tar.gz", "OVERWRITE IF EXIST" will result in:
+ *
+ * /foo/
+ * ./file1.txt
+ * ./dir/file2.txt
+ *
+ */
+function download_and_extract_tarball(url, dest_dir_path, mode, quiet) {
+    if (quiet === void 0) { quiet = false; }
+    var tarball_dir_path = "/tmp/_" + Date.now();
+    var tarball_path = tarball_dir_path + ".tar.gz";
+    if (!quiet) {
+        process.stdout.write("Downloading " + url + "...");
+    }
+    execSync("wget " + url + " -q -O " + tarball_path);
+    if (!quiet) {
+        process.stdout.write("Extracting...");
+    }
+    execSync("mkdir -p " + tarball_dir_path);
+    execSync("tar -xzf " + tarball_path + " -C " + tarball_dir_path);
+    if (!quiet) {
+        console.log(colorize("DONE", "GREEN"));
+    }
+    execSync("rm " + tarball_path);
+    if (mode === "MERGE") {
+        try {
+            for (var _a = __values(fs_ls(tarball_dir_path)), _b = _a.next(); !_b.done; _b = _a.next()) {
+                var name = _b.value;
+                fs_move("MOVE", tarball_dir_path, dest_dir_path, name);
+            }
+        }
+        catch (e_3_1) { e_3 = { error: e_3_1 }; }
+        finally {
+            try {
+                if (_b && !_b.done && (_c = _a.return)) _c.call(_a);
+            }
+            finally { if (e_3) throw e_3.error; }
+        }
+        execSync("rm -r " + tarball_dir_path);
+    }
+    else {
+        fs_move("MOVE", tarball_dir_path, dest_dir_path);
+    }
+    var e_3, _c;
+}
+exports.download_and_extract_tarball = download_and_extract_tarball;
+function fs_ls(dir_path, mode, showHidden) {
+    if (mode === void 0) { mode = "FILENAME"; }
+    if (showHidden === void 0) { showHidden = false; }
+    return execSync("ls" + (showHidden ? " -a" : ""), { "cwd": dir_path })
+        .slice(0, -1)
+        .split("\n")
+        .map(function (name) { return mode === "ABSOLUTE PATH" ? path.join(dir_path, name) : name; });
+}
+exports.fs_ls = fs_ls;
+/**
+ *
+ * Create a symbolic link.
+ * If dst exist it is removed.
+ * directories leading to dest are created if necessary.
+ *
+ */
+function fs_ln_s(src_path, dst_path) {
+    if (!fs.existsSync(dst_path)) {
+        execSync("mkdir -p " + dst_path);
+    }
+    execSync("rm -rf " + dst_path);
+    execSync("ln -s " + src_path + " " + dst_path);
+}
+exports.fs_ln_s = fs_ln_s;
+/** Create a executable file */
+function createScript(file_path, content) {
+    fs.writeFileSync(file_path, Buffer.from(content, "utf8"));
+    execSync("chmod +x " + file_path);
+}
+exports.createScript = createScript;
+/**
+ *
+ * Equivalent to the pattern $() in bash.
+ * Use only for constant as cmd result are cached.
+ * Strip final LF if present
+ *
+ * Typical usage: uname -r or which pkill
+ *
+ *
+ * @param cmd
+ */
+function shellEval(cmd) {
+    var out = shellEval.cache.get(cmd);
+    if (out !== undefined) {
+        return out;
+    }
+    else {
+        shellEval.cache.set(cmd, execSync(cmd).replace(/\n$/, ""));
+        return shellEval(cmd);
+    }
+}
+exports.shellEval = shellEval;
+(function (shellEval) {
+    shellEval.cache = new Map();
+})(shellEval = exports.shellEval || (exports.shellEval = {}));

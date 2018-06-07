@@ -420,3 +420,285 @@ export function find_module_path(
     }
 
 }
+
+/**
+ * 
+ * Test if two file of folder are same.
+ * Does not consider stat ( ownership and permission ).
+ * transparent handling of symlinks.
+ * 
+ * Example
+ * 
+ * /foo1/bar/file.txt
+ * /foo2/bar/file.txt
+ * 
+ * to compare the two version of file.txt
+ * call with "/foo1", "/foo2", "./bar/file.txt";
+ * or with "/foo1/bar/file.txt", "/foo2/bar/file.txt"
+ * 
+ * @param relative_from_path1 absolute path ex: '/foo1'
+ * @param relative_from_path2 absolute path ex: '/foo2'
+ * @param relative_to_path relative path ex: './bar/file.txt" or 'bar/file.txt'
+ * for convenience relative_to_path can be absolute as long as it has relative_from_path1
+ * or relative_from_path2 as parent.
+ * 
+ */
+export function fs_areSame(
+    relative_from_path1: string,
+    relative_from_path2: string,
+    relative_to_path: string = "."
+): boolean{
+
+    if( path.isAbsolute(relative_to_path) ){
+
+        for( const relative_from_path of [ relative_from_path1, relative_from_path2 ] ){
+
+            if( relative_to_path.startsWith(relative_from_path) ){
+                relative_to_path= path.relative(relative_from_path, relative_to_path);
+            }
+
+        }
+
+        throw new Error();
+
+    }
+
+    try{
+
+        execSyncQuiet([
+            "diff -r", 
+            path.join(relative_from_path1, relative_to_path), 
+            path.join(relative_from_path2, relative_to_path)
+        ].join(" "));
+
+    }catch{
+
+        return false;
+
+    }
+
+    return true;
+
+}
+
+/**
+ * 
+ * Move or copy file of folder.
+ * -If dest is identical to source nothing is copied nor moved.
+ * -If dest exist and is different of source it will be deleted prior to proceeding with action.
+ * -In move mode if dest identical to source source will be removed.
+ * -When copy is effectively performed the stat are conserved.
+ * -If dirname of dest does not exist in fs, it will be created.
+ * -Unlike cp or mv "/src/file.txt" "/dest" will NOT place file.txt in dest but dest will become file.txt
+ *  
+ * calling [action] "/src/foo" "/dst/foo" is equivalent 
+ * to calling [action] "/src" "/dst" "./foo" ( or "foo" )
+ * or [action] "/src" "/dst" "src/foo" 
+ * or [action] "/src" "/dst" "dst/foo" 
+ * 
+ */
+export function fs_move(
+    action: "COPY" | "MOVE",
+    relative_from_path_src: string,
+    relative_from_path_dest: string,
+    relative_to_path: string= "."
+){
+
+    if( path.isAbsolute(relative_to_path) ){
+
+        for( const relative_from_path of [ relative_from_path_src, relative_from_path_dest ] ){
+
+            if( relative_to_path.startsWith(relative_from_path) ){
+                relative_to_path= path.relative(relative_from_path, relative_to_path);
+            }
+
+        }
+
+        throw new Error();
+
+    }
+
+    const src_path = path.join(relative_from_path_src, relative_to_path);
+    const dst_path = path.join(relative_from_path_dest, relative_to_path);
+
+    if ( !fs_areSame(src_path, dst_path) ) {
+
+        if( !fs.existsSync(dst_path) ){
+            execSync(`mkdir -p ${dst_path}`);
+        }
+
+        execSync(`rm -rf ${dst_path}`);
+
+
+        execSync([
+            action === "COPY" ? "cp -rp" : "mv",
+            src_path,
+            dst_path
+        ].join(" "));
+
+    }
+
+
+    if (action === "MOVE") {
+        execSync(`rm -rf ${src_path}`);
+    }
+
+}
+
+/**
+ * Download and extract a tarball.
+ * 
+ * Example 
+ * 
+ * website.com/rel.tar.gz
+ * ./file1.txt
+ * ./dir/file2.txt
+ * 
+ * /foo/
+ * ./file3.txt
+ * ./dir/file4.txt
+ * 
+ * calling with "website.com/rel.tar.gz", "MERGE" will result in:
+ * 
+ * /foo/
+ * ./file1.txt
+ * ./file3.txt
+ * ./dir/file4.txt
+ *
+ * calling with "website.com/rel.tar.gz", "OVERWRITE IF EXIST" will result in:
+ *
+ * /foo/
+ * ./file1.txt
+ * ./dir/file2.txt
+ *
+ */
+export function download_and_extract_tarball(
+    url: string,
+    dest_dir_path: string,
+    mode: "MERGE" | "OVERWRITE IF EXIST",
+    quiet: "QUIET" | false = false
+) {
+
+    const tarball_dir_path = `/tmp/_${Date.now()}`
+    const tarball_path = `${tarball_dir_path}.tar.gz`;
+
+    if (!quiet) {
+        process.stdout.write(`Downloading ${url}...`);
+    }
+
+    execSync(`wget ${url} -q -O ${tarball_path}`)
+
+    if (!quiet) {
+        process.stdout.write(`Extracting...`);
+    }
+
+    execSync(`mkdir -p ${tarball_dir_path}`);
+
+    execSync(`tar -xzf ${tarball_path} -C ${tarball_dir_path}`);
+
+    if (!quiet) {
+        console.log(colorize("DONE", "GREEN"))
+    }
+
+    execSync(`rm ${tarball_path}`);
+
+    if (mode === "MERGE") {
+
+        for (const name of fs_ls(tarball_dir_path)) {
+
+            fs_move("MOVE", tarball_dir_path, dest_dir_path, name);
+
+        }
+
+        execSync(`rm -r ${tarball_dir_path}`);
+
+    } else {
+
+        fs_move("MOVE", tarball_dir_path, dest_dir_path);
+
+    }
+
+}
+
+export function fs_ls(
+    dir_path: string,
+    mode: "FILENAME" | "ABSOLUTE PATH" = "FILENAME",
+    showHidden = false
+): string[] {
+
+    return execSync(`ls${showHidden ? " -a" : ""}`, { "cwd": dir_path })
+        .slice(0, -1)
+        .split("\n")
+        .map(name => mode === "ABSOLUTE PATH" ? path.join(dir_path, name) : name);
+
+}
+
+/**
+ * 
+ * Create a symbolic link.
+ * If dst exist it is removed.
+ * directories leading to dest are created if necessary.
+ * 
+ */
+export function fs_ln_s(
+    src_path: string,
+    dst_path: string
+) {
+
+    if (!fs.existsSync(dst_path)) {
+        execSync(`mkdir -p ${dst_path}`);
+    }
+
+    execSync(`rm -rf ${dst_path}`);
+
+    execSync(`ln -s ${src_path} ${dst_path}`);
+
+}
+
+/** Create a executable file */
+export function createScript(
+    file_path: string, content: string 
+){
+
+    fs.writeFileSync(file_path, Buffer.from(content, "utf8"));
+
+    execSync(`chmod +x ${file_path}`);
+
+}
+
+/**
+ * 
+ * Equivalent to the pattern $() in bash.
+ * Use only for constant as cmd result are cached.
+ * Strip final LF if present
+ * 
+ * Typical usage: uname -r or which pkill
+ * 
+ * 
+ * @param cmd 
+ */
+export function shellEval(cmd: string): string {
+
+    const out = shellEval.cache.get(cmd);
+
+    if (out !== undefined) {
+
+        return out;
+
+    } else {
+
+        shellEval.cache.set(cmd, execSync(cmd).replace(/\n$/, ""));
+
+        return shellEval(cmd)!;
+    }
+
+}
+
+export namespace shellEval {
+
+    export const cache = new Map<string, string>();
+
+}
+
+
+

@@ -1,43 +1,48 @@
 import * as scriptLib from "../lib";
 import * as path from "path";
+import * as fs from "fs";
+
+console.assert(
+    scriptLib.find_module_path("typescript", path.join(__dirname, "../..")) 
+    === 
+    path.join(__dirname, "..", "..", "node_modules/typescript")
+);
+
+const dir_path= "/var/tmp/scripting-tools-tests";
+const dir_path_copy = path.join(dir_path, "..", `${path.basename(dir_path)}-copy`);
+
+scriptLib.execSync(`rm -rf ${dir_path} ${dir_path_copy} && mkdir -p ${path.join(dir_path,"dir")}`);
+
+scriptLib.execSync(`echo "[content of file 1]" > file1.txt`, { "cwd": dir_path });
+scriptLib.execSync(`echo "[content of file 2]" > file2.txt`, { "cwd": dir_path });
+scriptLib.execSync(`echo "[content of file 3]" > dir/file3.txt`, { "cwd" : dir_path });
+
+scriptLib.fs_move("COPY", dir_path, dir_path_copy);
+
+console.assert(scriptLib.fs_areSame(dir_path, dir_path_copy));
+
+scriptLib.execSync(`echo "(modified)" >> file2.txt`, { "cwd": dir_path });
+
+for (let name of scriptLib.fs_ls(dir_path)) {
+
+    console.assert(scriptLib.fs_areSame(dir_path, dir_path_copy, name) === (name !== "file2.txt"));
+
+}
+
+scriptLib.fs_move("MOVE", dir_path, dir_path_copy, "file2.txt");
+
+console.assert(!fs.existsSync(path.join(dir_path, "file2.txt")));
+
+scriptLib.fs_ln_s(
+    path.join(dir_path_copy, "file2.txt"), 
+    path.join(dir_path, "file2.txt")
+);
+
+console.assert(scriptLib.fs_areSame(dir_path, dir_path_copy));
+
+scriptLib.download_and_extract_tarball("https://github.com/jquery/jquery/archive/3.3.1.tar.gz", dir_path, "MERGE");
+scriptLib.download_and_extract_tarball("https://github.com/jquery/jquery/archive/3.3.1.tar.gz", dir_path_copy, "OVERWRITE IF EXIST" );
+
+scriptLib.execSync(`rm -rf ${dir_path} ${dir_path_copy}`);
 
 console.log(scriptLib.colorize("OK", "GREEN"));
-
-console.log(scriptLib.find_module_path("typescript", path.join(__dirname, "../..")));
-
-(async () => {
-
-
-    console.assert(scriptLib.execSyncQuiet(`echo "foo" && ls /doNotExist || echo "bar"`) === "foo\nbar\n");
-
-    const { exec, onSuccess } = scriptLib.start_long_running_process("We are going to do something that take time");
-
-    await exec("cd /home/pi && sleep 3 && echo 'foo' > foo.txt", { "unix_user": "pi" });
-
-    onSuccess();
-
-    scriptLib.execSyncTrace("ls -l | grep foo.txt", { "cwd": "/home/pi" });
-
-    scriptLib.execSyncTrace("cat foo.txt", { "cwd": "/home/pi" });
-
-    scriptLib.execSync("rm /home/pi/foo.txt");
-
-    scriptLib.enableTrace();
-
-    console.log(scriptLib.execSync("echo 'hello word'"));
-
-    scriptLib.exit_if_not_root();
-
-    await scriptLib.apt_get_install_if_missing("git", "git");
-
-    await (async () => {
-
-        const { exec, onSuccess } = scriptLib.start_long_running_process("We are doing foo bar");
-
-        await exec("echo 'foo bar baz'");
-
-        onSuccess("DONE");
-
-    })();
-
-})();

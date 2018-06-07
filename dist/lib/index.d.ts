@@ -77,3 +77,97 @@ export declare function exit_if_not_root(): void;
  * @param module_dir_path Path to the root of the module ( will search in ./node_modules ).
  */
 export declare function find_module_path(module_name: string, module_dir_path: string): string;
+/**
+ *
+ * Test if two file of folder are same.
+ * Does not consider stat ( ownership and permission ).
+ * transparent handling of symlinks.
+ *
+ * Example
+ *
+ * /foo1/bar/file.txt
+ * /foo2/bar/file.txt
+ *
+ * to compare the two version of file.txt
+ * call with "/foo1", "/foo2", "./bar/file.txt";
+ * or with "/foo1/bar/file.txt", "/foo2/bar/file.txt"
+ *
+ * @param relative_from_path1 absolute path ex: '/foo1'
+ * @param relative_from_path2 absolute path ex: '/foo2'
+ * @param relative_to_path relative path ex: './bar/file.txt" or 'bar/file.txt'
+ * for convenience relative_to_path can be absolute as long as it has relative_from_path1
+ * or relative_from_path2 as parent.
+ *
+ */
+export declare function fs_areSame(relative_from_path1: string, relative_from_path2: string, relative_to_path?: string): boolean;
+/**
+ *
+ * Move or copy file of folder.
+ * -If dest is identical to source nothing is copied nor moved.
+ * -If dest exist and is different of source it will be deleted prior to proceeding with action.
+ * -In move mode if dest identical to source source will be removed.
+ * -When copy is effectively performed the stat are conserved.
+ * -If dirname of dest does not exist in fs, it will be created.
+ * -Unlike cp or mv "/src/file.txt" "/dest" will NOT place file.txt in dest but dest will become file.txt
+ *
+ * calling [action] "/src/foo" "/dst/foo" is equivalent
+ * to calling [action] "/src" "/dst" "./foo" ( or "foo" )
+ * or [action] "/src" "/dst" "src/foo"
+ * or [action] "/src" "/dst" "dst/foo"
+ *
+ */
+export declare function fs_move(action: "COPY" | "MOVE", relative_from_path_src: string, relative_from_path_dest: string, relative_to_path?: string): void;
+/**
+ * Download and extract a tarball.
+ *
+ * Example
+ *
+ * website.com/rel.tar.gz
+ * ./file1.txt
+ * ./dir/file2.txt
+ *
+ * /foo/
+ * ./file3.txt
+ * ./dir/file4.txt
+ *
+ * calling with "website.com/rel.tar.gz", "MERGE" will result in:
+ *
+ * /foo/
+ * ./file1.txt
+ * ./file3.txt
+ * ./dir/file4.txt
+ *
+ * calling with "website.com/rel.tar.gz", "OVERWRITE IF EXIST" will result in:
+ *
+ * /foo/
+ * ./file1.txt
+ * ./dir/file2.txt
+ *
+ */
+export declare function download_and_extract_tarball(url: string, dest_dir_path: string, mode: "MERGE" | "OVERWRITE IF EXIST", quiet?: "QUIET" | false): void;
+export declare function fs_ls(dir_path: string, mode?: "FILENAME" | "ABSOLUTE PATH", showHidden?: boolean): string[];
+/**
+ *
+ * Create a symbolic link.
+ * If dst exist it is removed.
+ * directories leading to dest are created if necessary.
+ *
+ */
+export declare function fs_ln_s(src_path: string, dst_path: string): void;
+/** Create a executable file */
+export declare function createScript(file_path: string, content: string): void;
+/**
+ *
+ * Equivalent to the pattern $() in bash.
+ * Use only for constant as cmd result are cached.
+ * Strip final LF if present
+ *
+ * Typical usage: uname -r or which pkill
+ *
+ *
+ * @param cmd
+ */
+export declare function shellEval(cmd: string): string;
+export declare namespace shellEval {
+    const cache: Map<string, string>;
+}
