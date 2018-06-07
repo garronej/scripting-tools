@@ -4,7 +4,7 @@ import * as child_process from "child_process";
  * After this function is called every call to execSync
  * or exec will print the unix commands being executed.
  * */
-export declare function enableTrace(): void;
+export declare function enableCmdTrace(): void;
 export declare function colorize(str: string, color: "GREEN" | "RED" | "YELLOW"): string;
 /**
  *
@@ -15,11 +15,14 @@ export declare function colorize(str: string, color: "GREEN" | "RED" | "YELLOW")
  * If the return code of the cmd is not 0 an exception is thrown
  * and the message cmd + the concatenated data received on stderr.
  *
+ * If enableTrace() have been called the command called will be printed.
+ *
  */
 export declare function execSync(cmd: string, options?: child_process.ExecSyncOptions & {
     unix_user?: string;
 }): string;
 /**
+ *
  * The cmd is printed before execution
  * stdout and stderr are forwarded to the console realtime.
  * Return nothing.
@@ -30,6 +33,8 @@ export declare function execSync(cmd: string, options?: child_process.ExecSyncOp
 export declare function execSyncTrace(cmd: string, options?: child_process.ExecSyncOptions & {
     unix_user?: string;
 }): void;
+/** Same as execSync except that it dose not print cmd even if cmdTrace have been enabled */
+export declare const execSyncNoCmdTrace: typeof execSync;
 /**
  *
  * Like execSync but stderr is not forwarded.
@@ -47,16 +52,32 @@ export declare function execSyncQuiet(cmd: string, options?: child_process.ExecS
 export declare function exec(cmd: string, options?: child_process.ExecOptions & {
     unix_user?: string;
 }): Promise<string>;
+/**
+ *
+ * Print a message and enable a moving loading bar.
+ * WARNING: Nothing should be printed to stdout until we stop showing the moving loading.
+ *
+ * returns:
+ * -exec: A proxy to the exec fnc that will call onError before it throw the error.
+ * -onSuccess: Stop showing the moving loading and pretty print a success message ("ok" by default)
+ * -onError: Stop showing the moving loading and pretty print error message.
+ *
+ */
 export declare function start_long_running_process(message: string): {
-    onError(errorMessage: string): void;
-    onSuccess(message?: string): void;
     exec: typeof exec;
+    onSuccess(message?: string): void;
+    onError(errorMessage: string): void;
 };
+/**
+ * Apt package if not already installed,
+ * if prog is provided and prog is in the PATH the package will not be installed
+ * */
 export declare function apt_get_install_if_missing(package_name: string, prog?: string): Promise<void>;
 export declare namespace apt_get_install_if_missing {
     function isPkgInstalled(package_name: string): boolean;
     function doesHaveProg(prog: string): boolean;
 }
+/** Install or upgrade package via APT */
 export declare function apt_get_install(package_name: string): Promise<void>;
 export declare namespace apt_get_install {
     let isFirst: boolean;
@@ -144,7 +165,7 @@ export declare function fs_move(action: "COPY" | "MOVE", relative_from_path_src:
  * ./dir/file2.txt
  *
  */
-export declare function download_and_extract_tarball(url: string, dest_dir_path: string, mode: "MERGE" | "OVERWRITE IF EXIST", quiet?: "QUIET" | false): void;
+export declare function download_and_extract_tarball(url: string, dest_dir_path: string, mode: "MERGE" | "OVERWRITE IF EXIST"): void;
 export declare function fs_ls(dir_path: string, mode?: "FILENAME" | "ABSOLUTE PATH", showHidden?: boolean): string[];
 /**
  *
@@ -153,7 +174,7 @@ export declare function fs_ls(dir_path: string, mode?: "FILENAME" | "ABSOLUTE PA
  * directories leading to dest are created if necessary.
  *
  */
-export declare function fs_ln_s(src_path: string, dst_path: string): void;
+export declare function createSymlink(src_path: string, dst_path: string): void;
 /** Create a executable file */
 export declare function createScript(file_path: string, content: string): void;
 /**
@@ -164,8 +185,6 @@ export declare function createScript(file_path: string, content: string): void;
  *
  * Typical usage: uname -r or which pkill
  *
- *
- * @param cmd
  */
 export declare function shellEval(cmd: string): string;
 export declare namespace shellEval {

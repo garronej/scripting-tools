@@ -57,18 +57,23 @@ var child_process = require("child_process");
 var readline = require("readline");
 var fs = require("fs");
 var path = require("path");
-var trace = false;
 /**
  * After this function is called every call to execSync
  * or exec will print the unix commands being executed.
  * */
-function enableTrace() {
-    trace = true;
+function enableCmdTrace() {
+    traceCmdIfEnabled.enabled = true;
 }
-exports.enableTrace = enableTrace;
-function traceExec(cmd, options) {
+exports.enableCmdTrace = enableCmdTrace;
+function traceCmdIfEnabled(cmd, options) {
+    if (!traceCmdIfEnabled.enabled) {
+        return;
+    }
     console.log(colorize("$ " + cmd + " ", "YELLOW") + (!!options ? JSON.stringify(options) + "\n" : ""));
 }
+(function (traceCmdIfEnabled) {
+    traceCmdIfEnabled.enabled = false;
+})(traceCmdIfEnabled || (traceCmdIfEnabled = {}));
 function fetch_id(options) {
     if (!options) {
         return;
@@ -105,16 +110,17 @@ exports.colorize = colorize;
  * If the return code of the cmd is not 0 an exception is thrown
  * and the message cmd + the concatenated data received on stderr.
  *
+ * If enableTrace() have been called the command called will be printed.
+ *
  */
 function execSync(cmd, options) {
-    if (trace) {
-        traceExec(cmd, options);
-    }
+    traceCmdIfEnabled(cmd, options);
     fetch_id(options);
     return child_process.execSync(cmd, __assign({}, (options || {}), { "encoding": "utf8" }));
 }
 exports.execSync = execSync;
 /**
+ *
  * The cmd is printed before execution
  * stdout and stderr are forwarded to the console realtime.
  * Return nothing.
@@ -123,11 +129,29 @@ exports.execSync = execSync;
  *
  */
 function execSyncTrace(cmd, options) {
-    traceExec(cmd, options);
+    traceCmdIfEnabled(cmd, options);
     fetch_id(options);
     child_process.execSync(cmd, __assign({}, (options || {}), { "stdio": "inherit" }));
 }
 exports.execSyncTrace = execSyncTrace;
+/** Same as execSync except that it dose not print cmd even if cmdTrace have been enabled */
+exports.execSyncNoCmdTrace = function () {
+    var args = [];
+    for (var _i = 0; _i < arguments.length; _i++) {
+        args[_i] = arguments[_i];
+    }
+    var enabled_back = traceCmdIfEnabled.enabled;
+    traceCmdIfEnabled.enabled = false;
+    try {
+        var out = execSync.apply(null, args);
+        traceCmdIfEnabled.enabled = enabled_back;
+        return out;
+    }
+    catch (error) {
+        traceCmdIfEnabled.enabled = enabled_back;
+        throw error;
+    }
+};
 /**
  *
  * Like execSync but stderr is not forwarded.
@@ -145,9 +169,7 @@ exports.execSyncQuiet = execSyncQuiet;
 /** Same as execSync but async */
 function exec(cmd, options) {
     var _this = this;
-    if (trace) {
-        traceExec(cmd, options);
-    }
+    traceCmdIfEnabled(cmd, options);
     return new Promise(function (resolve, reject) { return __awaiter(_this, void 0, void 0, function () {
         return __generator(this, function (_a) {
             fetch_id(options);
@@ -165,6 +187,17 @@ function exec(cmd, options) {
     }); });
 }
 exports.exec = exec;
+/**
+ *
+ * Print a message and enable a moving loading bar.
+ * WARNING: Nothing should be printed to stdout until we stop showing the moving loading.
+ *
+ * returns:
+ * -exec: A proxy to the exec fnc that will call onError before it throw the error.
+ * -onSuccess: Stop showing the moving loading and pretty print a success message ("ok" by default)
+ * -onError: Stop showing the moving loading and pretty print error message.
+ *
+ */
 function start_long_running_process(message) {
     process.stdout.write(message + "... ");
     var moveBack = (function () {
@@ -185,6 +218,10 @@ function start_long_running_process(message) {
     };
     var onError = function (errorMessage) { return onComplete(colorize(errorMessage, "RED")); };
     var onSuccess = function (message) { return onComplete(colorize(message || "ok", "GREEN")); };
+    if (traceCmdIfEnabled.enabled) {
+        onComplete("");
+        onComplete = function (message) { return console.log(message); };
+    }
     return {
         onError: onError,
         onSuccess: onSuccess,
@@ -214,6 +251,10 @@ function start_long_running_process(message) {
 }
 exports.start_long_running_process = start_long_running_process;
 ;
+/**
+ * Apt package if not already installed,
+ * if prog is provided and prog is in the PATH the package will not be installed
+ * */
 function apt_get_install_if_missing(package_name, prog) {
     return __awaiter(this, void 0, void 0, function () {
         return __generator(this, function (_a) {
@@ -240,8 +281,7 @@ exports.apt_get_install_if_missing = apt_get_install_if_missing;
 (function (apt_get_install_if_missing) {
     function isPkgInstalled(package_name) {
         try {
-            console.assert(!!child_process.execSync("dpkg-query -W -f='${Status}' " + package_name + " 2>/dev/null")
-                .toString("utf8")
+            console.assert(!!exports.execSyncNoCmdTrace("dpkg-query -W -f='${Status}' " + package_name, { "stdio": "pipe" })
                 .match(/^install ok installed$/));
         }
         catch (_a) {
@@ -252,7 +292,7 @@ exports.apt_get_install_if_missing = apt_get_install_if_missing;
     apt_get_install_if_missing.isPkgInstalled = isPkgInstalled;
     function doesHaveProg(prog) {
         try {
-            child_process.execSync("which " + prog);
+            exports.execSyncNoCmdTrace("which " + prog);
         }
         catch (_a) {
             return false;
@@ -261,6 +301,7 @@ exports.apt_get_install_if_missing = apt_get_install_if_missing;
     }
     apt_get_install_if_missing.doesHaveProg = doesHaveProg;
 })(apt_get_install_if_missing = exports.apt_get_install_if_missing || (exports.apt_get_install_if_missing = {}));
+/** Install or upgrade package via APT */
 function apt_get_install(package_name) {
     return __awaiter(this, void 0, void 0, function () {
         var _a, onSuccess, exec, was_installed_before, error_2;
@@ -301,7 +342,7 @@ exports.apt_get_install = apt_get_install;
 (function (apt_get_install) {
     apt_get_install.isFirst = true;
     function record_installed_package(file_json_path, package_name) {
-        execSync("touch " + file_json_path);
+        exports.execSyncNoCmdTrace("touch " + file_json_path);
         var raw = fs.readFileSync(file_json_path).toString("utf8");
         var list = raw === "" ? [] : JSON.parse(raw);
         if (!list.find(function (p) { return p === package_name; })) {
@@ -315,7 +356,7 @@ exports.apt_get_install = apt_get_install;
 })(apt_get_install = exports.apt_get_install || (exports.apt_get_install = {}));
 function exit_if_not_root() {
     if (process.getuid() !== 0) {
-        console.log("Error: This script require root privilege");
+        console.log(colorize("Error: This script require root privilege", "RED"));
         process.exit(1);
     }
 }
@@ -338,7 +379,7 @@ function find_module_path(module_name, module_dir_path) {
         "-path \\*/node_modules/" + module_name + "/package.json",
         "-exec dirname {} \\;"
     ].join(" ");
-    var match = execSyncQuiet(cmd).slice(0, -1).split("\n");
+    var match = exports.execSyncNoCmdTrace(cmd, { "stdio": "pipe" }).slice(0, -1).split("\n");
     if (!match.length) {
         throw new Error(module_name + " not found in " + module_dir_path);
     }
@@ -390,11 +431,11 @@ function fs_areSame(relative_from_path1, relative_from_path2, relative_to_path) 
         throw new Error();
     }
     try {
-        execSyncQuiet([
+        exports.execSyncNoCmdTrace([
             "diff -r",
             path.join(relative_from_path1, relative_to_path),
             path.join(relative_from_path2, relative_to_path)
-        ].join(" "));
+        ].join(" "), { "stdio": "pipe" });
     }
     catch (_d) {
         return false;
@@ -443,17 +484,19 @@ function fs_move(action, relative_from_path_src, relative_from_path_dest, relati
     var dst_path = path.join(relative_from_path_dest, relative_to_path);
     if (!fs_areSame(src_path, dst_path)) {
         if (!fs.existsSync(dst_path)) {
-            execSync("mkdir -p " + dst_path);
+            exports.execSyncNoCmdTrace("mkdir -p " + dst_path);
         }
-        execSync("rm -rf " + dst_path);
-        execSync([
+        exports.execSyncNoCmdTrace("rm -rf " + dst_path);
+        exports.execSyncNoCmdTrace([
             action === "COPY" ? "cp -rp" : "mv",
             src_path,
             dst_path
         ].join(" "));
     }
-    if (action === "MOVE") {
-        execSync("rm -rf " + src_path);
+    else {
+        if (action === "MOVE") {
+            exports.execSyncNoCmdTrace("rm -r " + src_path);
+        }
     }
     var e_2, _c;
 }
@@ -485,23 +528,22 @@ exports.fs_move = fs_move;
  * ./dir/file2.txt
  *
  */
-function download_and_extract_tarball(url, dest_dir_path, mode, quiet) {
-    if (quiet === void 0) { quiet = false; }
+function download_and_extract_tarball(url, dest_dir_path, mode) {
     var tarball_dir_path = "/tmp/_" + Date.now();
     var tarball_path = tarball_dir_path + ".tar.gz";
-    if (!quiet) {
+    if (traceCmdIfEnabled.enabled) {
         process.stdout.write("Downloading " + url + "...");
     }
-    execSync("wget " + url + " -q -O " + tarball_path);
-    if (!quiet) {
-        process.stdout.write("Extracting...");
+    exports.execSyncNoCmdTrace("wget " + url + " -q -O " + tarball_path);
+    if (traceCmdIfEnabled.enabled) {
+        process.stdout.write("Extracting to " + dest_dir_path + "...");
     }
-    execSync("mkdir -p " + tarball_dir_path);
-    execSync("tar -xzf " + tarball_path + " -C " + tarball_dir_path);
-    if (!quiet) {
+    exports.execSyncNoCmdTrace("mkdir -p " + tarball_dir_path);
+    exports.execSyncNoCmdTrace("tar -xzf " + tarball_path + " -C " + tarball_dir_path);
+    if (traceCmdIfEnabled.enabled) {
         console.log(colorize("DONE", "GREEN"));
     }
-    execSync("rm " + tarball_path);
+    exports.execSyncNoCmdTrace("rm " + tarball_path);
     if (mode === "MERGE") {
         try {
             for (var _a = __values(fs_ls(tarball_dir_path)), _b = _a.next(); !_b.done; _b = _a.next()) {
@@ -516,7 +558,7 @@ function download_and_extract_tarball(url, dest_dir_path, mode, quiet) {
             }
             finally { if (e_3) throw e_3.error; }
         }
-        execSync("rm -r " + tarball_dir_path);
+        exports.execSyncNoCmdTrace("rm -r " + tarball_dir_path);
     }
     else {
         fs_move("MOVE", tarball_dir_path, dest_dir_path);
@@ -527,7 +569,7 @@ exports.download_and_extract_tarball = download_and_extract_tarball;
 function fs_ls(dir_path, mode, showHidden) {
     if (mode === void 0) { mode = "FILENAME"; }
     if (showHidden === void 0) { showHidden = false; }
-    return execSync("ls" + (showHidden ? " -a" : ""), { "cwd": dir_path })
+    return exports.execSyncNoCmdTrace("ls" + (showHidden ? " -a" : ""), { "cwd": dir_path })
         .slice(0, -1)
         .split("\n")
         .map(function (name) { return mode === "ABSOLUTE PATH" ? path.join(dir_path, name) : name; });
@@ -540,18 +582,21 @@ exports.fs_ls = fs_ls;
  * directories leading to dest are created if necessary.
  *
  */
-function fs_ln_s(src_path, dst_path) {
+function createSymlink(src_path, dst_path) {
     if (!fs.existsSync(dst_path)) {
-        execSync("mkdir -p " + dst_path);
+        exports.execSyncNoCmdTrace("mkdir -p " + dst_path);
     }
-    execSync("rm -rf " + dst_path);
+    exports.execSyncNoCmdTrace("rm -rf " + dst_path);
     execSync("ln -s " + src_path + " " + dst_path);
 }
-exports.fs_ln_s = fs_ln_s;
+exports.createSymlink = createSymlink;
 /** Create a executable file */
 function createScript(file_path, content) {
+    if (traceCmdIfEnabled.enabled) {
+        console.log("Creating script " + file_path);
+    }
     fs.writeFileSync(file_path, Buffer.from(content, "utf8"));
-    execSync("chmod +x " + file_path);
+    exports.execSyncNoCmdTrace("chmod +x " + file_path);
 }
 exports.createScript = createScript;
 /**
@@ -562,8 +607,6 @@ exports.createScript = createScript;
  *
  * Typical usage: uname -r or which pkill
  *
- *
- * @param cmd
  */
 function shellEval(cmd) {
     var out = shellEval.cache.get(cmd);
@@ -571,7 +614,7 @@ function shellEval(cmd) {
         return out;
     }
     else {
-        shellEval.cache.set(cmd, execSync(cmd).replace(/\n$/, ""));
+        shellEval.cache.set(cmd, exports.execSyncNoCmdTrace(cmd).replace(/\n$/, ""));
         return shellEval(cmd);
     }
 }

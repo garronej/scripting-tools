@@ -3,22 +3,28 @@ import * as readline from "readline";
 import * as fs from "fs";
 import * as path from "path";
 
-let trace= false;
-
 /** 
  * After this function is called every call to execSync 
  * or exec will print the unix commands being executed. 
  * */
-export function enableTrace(): void {
-    trace= true;
+export function enableCmdTrace(): void {
+    traceCmdIfEnabled.enabled= true;
 }
 
-function traceExec(cmd: string, options: any){
+function traceCmdIfEnabled(cmd: string, options: any){
+
+    if( !traceCmdIfEnabled.enabled ){
+        return;
+    }
 
     console.log(
         colorize(`$ ${cmd} `, "YELLOW") + (!!options?`${JSON.stringify(options)}\n`:"")
     );
 
+}
+
+namespace traceCmdIfEnabled {
+    export let enabled = false;
 }
 
 function fetch_id(options: any) {
@@ -72,17 +78,15 @@ export function colorize(str: string, color: "GREEN" | "RED" | "YELLOW"): string
  * If the return code of the cmd is not 0 an exception is thrown
  * and the message cmd + the concatenated data received on stderr.
  * 
+ * If enableTrace() have been called the command called will be printed.
+ * 
  */
 export function execSync(
     cmd: string,
     options?: child_process.ExecSyncOptions & { unix_user?: string },
 ): string {
 
-    if( trace ){
-
-        traceExec(cmd, options);
-
-    }
+    traceCmdIfEnabled(cmd, options);
 
     fetch_id(options);
 
@@ -91,6 +95,7 @@ export function execSync(
 }
 
 /** 
+ * 
  * The cmd is printed before execution
  * stdout and stderr are forwarded to the console realtime.
  * Return nothing.
@@ -103,13 +108,39 @@ export function execSyncTrace(
     options?: child_process.ExecSyncOptions & { unix_user?: string },
 ): void {
 
-    traceExec(cmd, options);
+    traceCmdIfEnabled(cmd, options);
 
     fetch_id(options);
 
     child_process.execSync(cmd, { ...(options as any || {}), "stdio": "inherit" });
 
 }
+
+/** Same as execSync except that it dose not print cmd even if cmdTrace have been enabled */
+export const execSyncNoCmdTrace: typeof execSync = (...args)=> {
+
+    const enabled_back = traceCmdIfEnabled.enabled;
+
+    traceCmdIfEnabled.enabled = false;
+
+    try{
+
+        const out= execSync.apply(null, args);
+
+        traceCmdIfEnabled.enabled = enabled_back;
+
+        return out;
+
+    }catch(error){
+
+        traceCmdIfEnabled.enabled = enabled_back;
+
+        throw error;
+
+    }
+    
+
+};
 
 /**
  * 
@@ -137,11 +168,7 @@ export function exec(
     options?: child_process.ExecOptions & { unix_user?: string }
 ): Promise<string> {
 
-    if( trace ){
-
-        traceExec(cmd, options);
-
-    }
+    traceCmdIfEnabled(cmd, options);
 
     return new Promise(
         async (resolve, reject) => {
@@ -173,10 +200,21 @@ export function exec(
 
 }
 
+/** 
+ * 
+ * Print a message and enable a moving loading bar.
+ * WARNING: Nothing should be printed to stdout until we stop showing the moving loading.
+ * 
+ * returns: 
+ * -exec: A proxy to the exec fnc that will call onError before it throw the error.
+ * -onSuccess: Stop showing the moving loading and pretty print a success message ("ok" by default)
+ * -onError: Stop showing the moving loading and pretty print error message.
+ * 
+ */
 export function start_long_running_process(message: string): {
-    onError(errorMessage: string): void;
-    onSuccess(message?: string): void;
     exec: typeof exec;
+    onSuccess(message?: string): void;
+    onError(errorMessage: string): void;
 } {
 
     process.stdout.write(`${message}... `);
@@ -203,7 +241,7 @@ export function start_long_running_process(message: string): {
 
     }, 250);
 
-    const onComplete = (message: string) => {
+    let onComplete = (message: string) => {
 
         clearInterval(timer);
 
@@ -213,19 +251,27 @@ export function start_long_running_process(message: string): {
 
     };
 
-    const onError= errorMessage => onComplete(colorize(errorMessage, "RED"));
-    const onSuccess= message => onComplete(colorize(message || "ok", "GREEN"));
+    const onError = errorMessage => onComplete(colorize(errorMessage, "RED"));
+    const onSuccess = message => onComplete(colorize(message || "ok", "GREEN"));
+
+    if (traceCmdIfEnabled.enabled) {
+
+        onComplete("");
+
+        onComplete = message => console.log(message);
+
+    }
 
     return {
         onError,
         onSuccess,
-        "exec": async function(...args){
+        "exec": async function (...args) {
 
-            try{
+            try {
 
                 return await exec.apply(null, args);
 
-            }catch(error){
+            } catch (error) {
 
                 onError(error.message);
 
@@ -238,6 +284,10 @@ export function start_long_running_process(message: string): {
 
 };
 
+/** 
+ * Apt package if not already installed, 
+ * if prog is provided and prog is in the PATH the package will not be installed
+ * */
 export async function apt_get_install_if_missing(
     package_name: string,
     prog?: string
@@ -277,8 +327,7 @@ export namespace apt_get_install_if_missing {
         try {
 
             console.assert(
-                !!child_process.execSync(`dpkg-query -W -f='\${Status}' ${package_name} 2>/dev/null`)
-                    .toString("utf8")
+                !!execSyncNoCmdTrace(`dpkg-query -W -f='\${Status}' ${package_name}`, { "stdio": "pipe" })
                     .match(/^install ok installed$/)
             );
 
@@ -296,7 +345,7 @@ export namespace apt_get_install_if_missing {
 
         try {
 
-            child_process.execSync(`which ${prog}`);
+            execSyncNoCmdTrace(`which ${prog}`);
 
         } catch{
 
@@ -310,7 +359,8 @@ export namespace apt_get_install_if_missing {
 
 }
 
-export async function apt_get_install( package_name: string) {
+/** Install or upgrade package via APT */
+export async function apt_get_install(package_name: string) {
 
     const { onSuccess, exec } = start_long_running_process(`Installing or upgrading ${package_name} package`);
 
@@ -324,11 +374,11 @@ export async function apt_get_install( package_name: string) {
 
         }
 
-        const was_installed_before= apt_get_install_if_missing.isPkgInstalled(package_name);
+        const was_installed_before = apt_get_install_if_missing.isPkgInstalled(package_name);
 
         await exec(`apt-get -y install ${package_name}`);
 
-        if( !was_installed_before ){
+        if (!was_installed_before) {
 
             apt_get_install.onInstallSuccess(package_name);
 
@@ -353,7 +403,7 @@ export namespace apt_get_install {
         package_name: string
     ): void {
 
-        execSync(`touch ${file_json_path}`);
+        execSyncNoCmdTrace(`touch ${file_json_path}`);
 
         const raw = fs.readFileSync(file_json_path).toString("utf8");
 
@@ -381,7 +431,7 @@ export namespace apt_get_install {
 export function exit_if_not_root(): void {
     if (process.getuid() !== 0) {
 
-        console.log("Error: This script require root privilege");
+        console.log(colorize("Error: This script require root privilege", "RED"));
 
         process.exit(1);
 
@@ -411,7 +461,7 @@ export function find_module_path(
         `-exec dirname {} \\;`
     ].join(" ");
 
-    const match = execSyncQuiet(cmd).slice(0, -1).split("\n");
+    const match = execSyncNoCmdTrace(cmd, { "stdio": "pipe" }).slice(0, -1).split("\n");
 
     if (!match.length) {
         throw new Error(`${module_name} not found in ${module_dir_path}`);
@@ -441,20 +491,20 @@ export function find_module_path(
  * @param relative_to_path relative path ex: './bar/file.txt" or 'bar/file.txt'
  * for convenience relative_to_path can be absolute as long as it has relative_from_path1
  * or relative_from_path2 as parent.
- * 
+ *
  */
 export function fs_areSame(
     relative_from_path1: string,
     relative_from_path2: string,
     relative_to_path: string = "."
-): boolean{
+): boolean {
 
-    if( path.isAbsolute(relative_to_path) ){
+    if (path.isAbsolute(relative_to_path)) {
 
-        for( const relative_from_path of [ relative_from_path1, relative_from_path2 ] ){
+        for (const relative_from_path of [relative_from_path1, relative_from_path2]) {
 
-            if( relative_to_path.startsWith(relative_from_path) ){
-                relative_to_path= path.relative(relative_from_path, relative_to_path);
+            if (relative_to_path.startsWith(relative_from_path)) {
+                relative_to_path = path.relative(relative_from_path, relative_to_path);
             }
 
         }
@@ -463,15 +513,17 @@ export function fs_areSame(
 
     }
 
-    try{
+    try {
 
-        execSyncQuiet([
-            "diff -r", 
-            path.join(relative_from_path1, relative_to_path), 
+        execSyncNoCmdTrace([
+            "diff -r",
+            path.join(relative_from_path1, relative_to_path),
             path.join(relative_from_path2, relative_to_path)
-        ].join(" "));
+        ].join(" "),
+            { "stdio": "pipe" }
+        );
 
-    }catch{
+    } catch{
 
         return false;
 
@@ -490,26 +542,26 @@ export function fs_areSame(
  * -When copy is effectively performed the stat are conserved.
  * -If dirname of dest does not exist in fs, it will be created.
  * -Unlike cp or mv "/src/file.txt" "/dest" will NOT place file.txt in dest but dest will become file.txt
- *  
- * calling [action] "/src/foo" "/dst/foo" is equivalent 
+ *
+ * calling [action] "/src/foo" "/dst/foo" is equivalent
  * to calling [action] "/src" "/dst" "./foo" ( or "foo" )
- * or [action] "/src" "/dst" "src/foo" 
- * or [action] "/src" "/dst" "dst/foo" 
- * 
+ * or [action] "/src" "/dst" "src/foo"
+ * or [action] "/src" "/dst" "dst/foo"
+ *
  */
 export function fs_move(
     action: "COPY" | "MOVE",
     relative_from_path_src: string,
     relative_from_path_dest: string,
-    relative_to_path: string= "."
-){
+    relative_to_path: string = "."
+) {
 
-    if( path.isAbsolute(relative_to_path) ){
+    if (path.isAbsolute(relative_to_path)) {
 
-        for( const relative_from_path of [ relative_from_path_src, relative_from_path_dest ] ){
+        for (const relative_from_path of [relative_from_path_src, relative_from_path_dest]) {
 
-            if( relative_to_path.startsWith(relative_from_path) ){
-                relative_to_path= path.relative(relative_from_path, relative_to_path);
+            if (relative_to_path.startsWith(relative_from_path)) {
+                relative_to_path = path.relative(relative_from_path, relative_to_path);
             }
 
         }
@@ -521,27 +573,29 @@ export function fs_move(
     const src_path = path.join(relative_from_path_src, relative_to_path);
     const dst_path = path.join(relative_from_path_dest, relative_to_path);
 
-    if ( !fs_areSame(src_path, dst_path) ) {
+    if (!fs_areSame(src_path, dst_path)) {
 
-        if( !fs.existsSync(dst_path) ){
-            execSync(`mkdir -p ${dst_path}`);
+        if (!fs.existsSync(dst_path)) {
+            execSyncNoCmdTrace(`mkdir -p ${dst_path}`);
         }
 
-        execSync(`rm -rf ${dst_path}`);
+        execSyncNoCmdTrace(`rm -rf ${dst_path}`);
 
-
-        execSync([
+        execSyncNoCmdTrace([
             action === "COPY" ? "cp -rp" : "mv",
             src_path,
             dst_path
         ].join(" "));
 
+    } else {
+
+        if (action === "MOVE") {
+            execSyncNoCmdTrace(`rm -r ${src_path}`);
+        }
+
     }
 
 
-    if (action === "MOVE") {
-        execSync(`rm -rf ${src_path}`);
-    }
 
 }
 
@@ -575,32 +629,31 @@ export function fs_move(
 export function download_and_extract_tarball(
     url: string,
     dest_dir_path: string,
-    mode: "MERGE" | "OVERWRITE IF EXIST",
-    quiet: "QUIET" | false = false
+    mode: "MERGE" | "OVERWRITE IF EXIST"
 ) {
 
     const tarball_dir_path = `/tmp/_${Date.now()}`
     const tarball_path = `${tarball_dir_path}.tar.gz`;
 
-    if (!quiet) {
+    if (traceCmdIfEnabled.enabled) {
         process.stdout.write(`Downloading ${url}...`);
     }
 
-    execSync(`wget ${url} -q -O ${tarball_path}`)
+    execSyncNoCmdTrace(`wget ${url} -q -O ${tarball_path}`)
 
-    if (!quiet) {
-        process.stdout.write(`Extracting...`);
+    if (traceCmdIfEnabled.enabled) {
+        process.stdout.write(`Extracting to ${dest_dir_path}...`);
     }
 
-    execSync(`mkdir -p ${tarball_dir_path}`);
+    execSyncNoCmdTrace(`mkdir -p ${tarball_dir_path}`);
 
-    execSync(`tar -xzf ${tarball_path} -C ${tarball_dir_path}`);
+    execSyncNoCmdTrace(`tar -xzf ${tarball_path} -C ${tarball_dir_path}`);
 
-    if (!quiet) {
+    if (traceCmdIfEnabled.enabled) {
         console.log(colorize("DONE", "GREEN"))
     }
 
-    execSync(`rm ${tarball_path}`);
+    execSyncNoCmdTrace(`rm ${tarball_path}`);
 
     if (mode === "MERGE") {
 
@@ -610,7 +663,7 @@ export function download_and_extract_tarball(
 
         }
 
-        execSync(`rm -r ${tarball_dir_path}`);
+        execSyncNoCmdTrace(`rm -r ${tarball_dir_path}`);
 
     } else {
 
@@ -626,7 +679,7 @@ export function fs_ls(
     showHidden = false
 ): string[] {
 
-    return execSync(`ls${showHidden ? " -a" : ""}`, { "cwd": dir_path })
+    return execSyncNoCmdTrace(`ls${showHidden ? " -a" : ""}`, { "cwd": dir_path })
         .slice(0, -1)
         .split("\n")
         .map(name => mode === "ABSOLUTE PATH" ? path.join(dir_path, name) : name);
@@ -640,16 +693,16 @@ export function fs_ls(
  * directories leading to dest are created if necessary.
  * 
  */
-export function fs_ln_s(
+export function createSymlink(
     src_path: string,
     dst_path: string
 ) {
 
     if (!fs.existsSync(dst_path)) {
-        execSync(`mkdir -p ${dst_path}`);
+        execSyncNoCmdTrace(`mkdir -p ${dst_path}`);
     }
 
-    execSync(`rm -rf ${dst_path}`);
+    execSyncNoCmdTrace(`rm -rf ${dst_path}`);
 
     execSync(`ln -s ${src_path} ${dst_path}`);
 
@@ -657,12 +710,16 @@ export function fs_ln_s(
 
 /** Create a executable file */
 export function createScript(
-    file_path: string, content: string 
-){
+    file_path: string, content: string
+) {
+
+    if (traceCmdIfEnabled.enabled) {
+        console.log(`Creating script ${file_path}`);
+    }
 
     fs.writeFileSync(file_path, Buffer.from(content, "utf8"));
 
-    execSync(`chmod +x ${file_path}`);
+    execSyncNoCmdTrace(`chmod +x ${file_path}`);
 
 }
 
@@ -674,8 +731,6 @@ export function createScript(
  * 
  * Typical usage: uname -r or which pkill
  * 
- * 
- * @param cmd 
  */
 export function shellEval(cmd: string): string {
 
@@ -687,7 +742,7 @@ export function shellEval(cmd: string): string {
 
     } else {
 
-        shellEval.cache.set(cmd, execSync(cmd).replace(/\n$/, ""));
+        shellEval.cache.set(cmd, execSyncNoCmdTrace(cmd).replace(/\n$/, ""));
 
         return shellEval(cmd)!;
     }
