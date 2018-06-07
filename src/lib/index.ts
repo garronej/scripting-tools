@@ -1,6 +1,7 @@
 import * as child_process from "child_process";
 import * as readline from "readline";
 import * as fs from "fs";
+import * as path from "path";
 
 let trace= false;
 
@@ -385,4 +386,37 @@ export function exit_if_not_root(): void {
         process.exit(1);
 
     }
+}
+
+/**
+ * 
+ * Locate a given module in a node_modules directory.
+ * If the module is required in different version and thus
+ * present multiple times will be returned the shorter path.
+ * This ensure that if a given module is in package.json 's dependencies
+ * section the returned path will be the one we looking for.
+ * 
+ * @param module_name The name of the module.
+ * @param module_dir_path Path to the root of the module ( will search in ./node_modules ).
+ */
+export function find_module_path(
+    module_name: string,
+    module_dir_path: string
+): string {
+
+    const cmd = [
+        `find ${path.join(module_dir_path, "node_modules")}`,
+        `-type f`,
+        `-path \\*/node_modules/${module_name}/package.json`,
+        `-exec dirname {} \\;`
+    ].join(" ");
+
+    const match = execSyncQuiet(cmd).slice(0, -1).split("\n");
+
+    if (!match.length) {
+        throw new Error(`${module_name} not found in ${module_dir_path}`);
+    } else {
+        return match.sort((a, b) => a.length - b.length)[0];
+    }
+
 }

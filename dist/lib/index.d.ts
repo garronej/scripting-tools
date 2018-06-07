@@ -65,3 +65,15 @@ export declare namespace apt_get_install {
     let onInstallSuccess: (package_name: string) => void;
 }
 export declare function exit_if_not_root(): void;
+/**
+ *
+ * Locate a given module in a node_modules directory.
+ * If the module is required in different version and thus
+ * present multiple times will be returned the shorter path.
+ * This ensure that if a given module is in package.json 's dependencies
+ * section the returned path will be the one we looking for.
+ *
+ * @param module_name The name of the module.
+ * @param module_dir_path Path to the root of the module ( will search in ./node_modules ).
+ */
+export declare function find_module_path(module_name: string, module_dir_path: string): string;

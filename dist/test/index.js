@@ -37,7 +37,9 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
 var _this = this;
 Object.defineProperty(exports, "__esModule", { value: true });
 var scriptLib = require("../lib");
+var path = require("path");
 console.log(scriptLib.colorize("OK", "GREEN"));
+console.log(scriptLib.find_module_path("typescript", path.join(__dirname, "../..")));
 (function () { return __awaiter(_this, void 0, void 0, function () {
     var _this = this;
     var _a, exec, onSuccess;

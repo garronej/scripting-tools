@@ -1,8 +1,12 @@
 import * as scriptLib from "../lib";
+import * as path from "path";
 
 console.log(scriptLib.colorize("OK", "GREEN"));
 
+console.log(scriptLib.find_module_path("typescript", path.join(__dirname, "../..")));
+
 (async () => {
+
 
     console.assert(scriptLib.execSyncQuiet(`echo "foo" && ls /doNotExist || echo "bar"`) === "foo\nbar\n");
 

@@ -46,6 +46,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 var child_process = require("child_process");
 var readline = require("readline");
 var fs = require("fs");
+var path = require("path");
 var trace = false;
 /**
  * After this function is called every call to execSync
@@ -309,3 +310,30 @@ function exit_if_not_root() {
     }
 }
 exports.exit_if_not_root = exit_if_not_root;
+/**
+ *
+ * Locate a given module in a node_modules directory.
+ * If the module is required in different version and thus
+ * present multiple times will be returned the shorter path.
+ * This ensure that if a given module is in package.json 's dependencies
+ * section the returned path will be the one we looking for.
+ *
+ * @param module_name The name of the module.
+ * @param module_dir_path Path to the root of the module ( will search in ./node_modules ).
+ */
+function find_module_path(module_name, module_dir_path) {
+    var cmd = [
+        "find " + path.join(module_dir_path, "node_modules"),
+        "-type f",
+        "-path \\*/node_modules/" + module_name + "/package.json",
+        "-exec dirname {} \\;"
+    ].join(" ");
+    var match = execSyncQuiet(cmd).slice(0, -1).split("\n");
+    if (!match.length) {
+        throw new Error(module_name + " not found in " + module_dir_path);
+    }
+    else {
+        return match.sort(function (a, b) { return a.length - b.length; })[0];
+    }
+}
+exports.find_module_path = find_module_path;
