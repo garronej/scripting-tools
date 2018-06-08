@@ -726,34 +726,51 @@ export function createScript(
 /**
  * 
  * Equivalent to the pattern $() in bash.
- * Use only for constant as cmd result are cached.
- * Strip final LF if present
+ * Strip final LF if present.
+ * If cmd fail no error is thrown, an empty string is returned.
+ * Does not print to stdout.
  * 
  * Typical usage: uname -r or which pkill
  * 
  */
-export function shellEval(cmd: string): string {
+export function sh_eval(cmd: string): string{
+    
+    let res: string;
 
-    const out = shellEval.cache.get(cmd);
+    try{
 
-    if (out !== undefined) {
+        res = execSyncNoCmdTrace(cmd, { "stdio": "pipe" })
 
-        return out;
+    }catch{
 
-    } else {
+        return "";
 
-        shellEval.cache.set(cmd, execSyncNoCmdTrace(cmd).replace(/\n$/, ""));
+    }
+    
+    return res.replace(/\n$/, "");
 
-        return shellEval(cmd)!;
+}
+
+/**
+ * Run a command and return true if the return code was 0.
+ * Does not print to stdout.
+ */
+export function sh_if(cmd: string): boolean {
+
+    try {
+
+        execSyncNoCmdTrace(cmd, { "stdio": "pipe" });
+
+    } catch{
+
+        return false;
+
     }
 
-}
-
-export namespace shellEval {
-
-    export const cache = new Map<string, string>();
+    return true;
 
 }
+
 
 
 

@@ -602,23 +602,35 @@ exports.createScript = createScript;
 /**
  *
  * Equivalent to the pattern $() in bash.
- * Use only for constant as cmd result are cached.
- * Strip final LF if present
+ * Strip final LF if present.
+ * If cmd fail no error is thrown, an empty string is returned.
+ * Does not print to stdout.
  *
  * Typical usage: uname -r or which pkill
  *
  */
-function shellEval(cmd) {
-    var out = shellEval.cache.get(cmd);
-    if (out !== undefined) {
-        return out;
+function sh_eval(cmd) {
+    var res;
+    try {
+        res = exports.execSyncNoCmdTrace(cmd, { "stdio": "pipe" });
     }
-    else {
-        shellEval.cache.set(cmd, exports.execSyncNoCmdTrace(cmd).replace(/\n$/, ""));
-        return shellEval(cmd);
+    catch (_a) {
+        return "";
     }
+    return res.replace(/\n$/, "");
 }
-exports.shellEval = shellEval;
-(function (shellEval) {
-    shellEval.cache = new Map();
-})(shellEval = exports.shellEval || (exports.shellEval = {}));
+exports.sh_eval = sh_eval;
+/**
+ * Run a command and return true if the return code was 0.
+ * Does not print to stdout.
+ */
+function sh_if(cmd) {
+    try {
+        exports.execSyncNoCmdTrace(cmd, { "stdio": "pipe" });
+    }
+    catch (_a) {
+        return false;
+    }
+    return true;
+}
+exports.sh_if = sh_if;

@@ -96,7 +96,9 @@ scriptLib.enableCmdTrace();
             case 2:
                 _g.sent();
                 onSuccess();
-                console.assert(scriptLib.shellEval("which cat") === "/bin/cat");
+                console.assert(scriptLib.sh_eval("which cat") === "/bin/cat");
+                console.assert(scriptLib.sh_if("cat tmp/file_that_does_not_exist.dummy") === false);
+                console.assert(scriptLib.sh_if("which git") === true);
                 return [4 /*yield*/, scriptLib.apt_get_install_if_missing("git")];
             case 3:
                 _g.sent();

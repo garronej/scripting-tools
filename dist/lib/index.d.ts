@@ -180,13 +180,16 @@ export declare function createScript(file_path: string, content: string): void;
 /**
  *
  * Equivalent to the pattern $() in bash.
- * Use only for constant as cmd result are cached.
- * Strip final LF if present
+ * Strip final LF if present.
+ * If cmd fail no error is thrown, an empty string is returned.
+ * Does not print to stdout.
  *
  * Typical usage: uname -r or which pkill
  *
  */
-export declare function shellEval(cmd: string): string;
-export declare namespace shellEval {
-    const cache: Map<string, string>;
-}
+export declare function sh_eval(cmd: string): string;
+/**
+ * Run a command and return true if the return code was 0.
+ * Does not print to stdout.
+ */
+export declare function sh_if(cmd: string): boolean;
