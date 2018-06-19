@@ -33,7 +33,8 @@ scriptLib.enableCmdTrace();
 
     }
 
-    scriptLib.fs_move("MOVE", dir_path, dir_path_copy, "file2.txt");
+    //scriptLib.fs_move("MOVE", dir_path, dir_path_copy, "file2.txt");
+    scriptLib.fs_move("MOVE", dir_path, dir_path_copy, path.join(dir_path_copy,"file2.txt"));
 
     console.assert(!fs.existsSync(path.join(dir_path, "file2.txt")));
 

@@ -499,19 +499,9 @@ export function fs_areSame(
     relative_to_path: string = "."
 ): boolean {
 
-    if (path.isAbsolute(relative_to_path)) {
-
-        for (const relative_from_path of [relative_from_path1, relative_from_path2]) {
-
-            if (relative_to_path.startsWith(relative_from_path)) {
-                relative_to_path = path.relative(relative_from_path, relative_to_path);
-            }
-
-        }
-
-        throw new Error();
-
-    }
+    relative_to_path= fs_areSame.get_relative_to_path(
+        relative_from_path1, relative_from_path2, relative_to_path
+    );
 
     try {
 
@@ -530,6 +520,36 @@ export function fs_areSame(
     }
 
     return true;
+
+}
+
+export namespace fs_areSame {
+
+    export function get_relative_to_path(
+        dir_path1: string,
+        dir_path2: string,
+        to_path: string
+    ): string {
+
+        if (path.isAbsolute(to_path)) {
+
+            const dir_path = [dir_path1, dir_path2]
+                .filter(v => to_path.startsWith(v))
+                .sort((a, b) => b.length - a.length)[0];
+
+            if (!dir_path) {
+                throw new Error("Not relative!");
+            }
+
+            return path.relative(dir_path, to_path);
+
+        } else {
+
+            return to_path;
+
+        }
+
+    }
 
 }
 
@@ -556,19 +576,9 @@ export function fs_move(
     relative_to_path: string = "."
 ) {
 
-    if (path.isAbsolute(relative_to_path)) {
-
-        for (const relative_from_path of [relative_from_path_src, relative_from_path_dest]) {
-
-            if (relative_to_path.startsWith(relative_from_path)) {
-                relative_to_path = path.relative(relative_from_path, relative_to_path);
-            }
-
-        }
-
-        throw new Error();
-
-    }
+    relative_to_path = fs_areSame.get_relative_to_path(
+        relative_from_path_src, relative_from_path_dest, relative_to_path
+    );
 
     const src_path = path.join(relative_from_path_src, relative_to_path);
     const dst_path = path.join(relative_from_path_dest, relative_to_path);
@@ -733,20 +743,20 @@ export function createScript(
  * Typical usage: uname -r or which pkill
  * 
  */
-export function sh_eval(cmd: string): string{
-    
+export function sh_eval(cmd: string): string {
+
     let res: string;
 
-    try{
+    try {
 
         res = execSyncNoCmdTrace(cmd, { "stdio": "pipe" })
 
-    }catch{
+    } catch{
 
         return "";
 
     }
-    
+
     return res.replace(/\n$/, "");
 
 }

@@ -121,6 +121,9 @@ export declare function find_module_path(module_name: string, module_dir_path: s
  *
  */
 export declare function fs_areSame(relative_from_path1: string, relative_from_path2: string, relative_to_path?: string): boolean;
+export declare namespace fs_areSame {
+    function get_relative_to_path(dir_path1: string, dir_path2: string, to_path: string): string;
+}
 /**
  *
  * Move or copy file of folder.

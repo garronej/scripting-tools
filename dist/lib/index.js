@@ -412,24 +412,7 @@ exports.find_module_path = find_module_path;
  */
 function fs_areSame(relative_from_path1, relative_from_path2, relative_to_path) {
     if (relative_to_path === void 0) { relative_to_path = "."; }
-    if (path.isAbsolute(relative_to_path)) {
-        try {
-            for (var _a = __values([relative_from_path1, relative_from_path2]), _b = _a.next(); !_b.done; _b = _a.next()) {
-                var relative_from_path = _b.value;
-                if (relative_to_path.startsWith(relative_from_path)) {
-                    relative_to_path = path.relative(relative_from_path, relative_to_path);
-                }
-            }
-        }
-        catch (e_1_1) { e_1 = { error: e_1_1 }; }
-        finally {
-            try {
-                if (_b && !_b.done && (_c = _a.return)) _c.call(_a);
-            }
-            finally { if (e_1) throw e_1.error; }
-        }
-        throw new Error();
-    }
+    relative_to_path = fs_areSame.get_relative_to_path(relative_from_path1, relative_from_path2, relative_to_path);
     try {
         exports.execSyncNoCmdTrace([
             "diff -r",
@@ -437,13 +420,29 @@ function fs_areSame(relative_from_path1, relative_from_path2, relative_to_path) 
             path.join(relative_from_path2, relative_to_path)
         ].join(" "), { "stdio": "pipe" });
     }
-    catch (_d) {
+    catch (_a) {
         return false;
     }
     return true;
-    var e_1, _c;
 }
 exports.fs_areSame = fs_areSame;
+(function (fs_areSame) {
+    function get_relative_to_path(dir_path1, dir_path2, to_path) {
+        if (path.isAbsolute(to_path)) {
+            var dir_path = [dir_path1, dir_path2]
+                .filter(function (v) { return to_path.startsWith(v); })
+                .sort(function (a, b) { return b.length - a.length; })[0];
+            if (!dir_path) {
+                throw new Error("Not relative!");
+            }
+            return path.relative(dir_path, to_path);
+        }
+        else {
+            return to_path;
+        }
+    }
+    fs_areSame.get_relative_to_path = get_relative_to_path;
+})(fs_areSame = exports.fs_areSame || (exports.fs_areSame = {}));
 /**
  *
  * Move or copy file of folder.
@@ -462,24 +461,7 @@ exports.fs_areSame = fs_areSame;
  */
 function fs_move(action, relative_from_path_src, relative_from_path_dest, relative_to_path) {
     if (relative_to_path === void 0) { relative_to_path = "."; }
-    if (path.isAbsolute(relative_to_path)) {
-        try {
-            for (var _a = __values([relative_from_path_src, relative_from_path_dest]), _b = _a.next(); !_b.done; _b = _a.next()) {
-                var relative_from_path = _b.value;
-                if (relative_to_path.startsWith(relative_from_path)) {
-                    relative_to_path = path.relative(relative_from_path, relative_to_path);
-                }
-            }
-        }
-        catch (e_2_1) { e_2 = { error: e_2_1 }; }
-        finally {
-            try {
-                if (_b && !_b.done && (_c = _a.return)) _c.call(_a);
-            }
-            finally { if (e_2) throw e_2.error; }
-        }
-        throw new Error();
-    }
+    relative_to_path = fs_areSame.get_relative_to_path(relative_from_path_src, relative_from_path_dest, relative_to_path);
     var src_path = path.join(relative_from_path_src, relative_to_path);
     var dst_path = path.join(relative_from_path_dest, relative_to_path);
     if (!fs_areSame(src_path, dst_path)) {
@@ -498,7 +480,6 @@ function fs_move(action, relative_from_path_src, relative_from_path_dest, relati
             exports.execSyncNoCmdTrace("rm -r " + src_path);
         }
     }
-    var e_2, _c;
 }
 exports.fs_move = fs_move;
 /**
@@ -551,19 +532,19 @@ function download_and_extract_tarball(url, dest_dir_path, mode) {
                 fs_move("MOVE", tarball_dir_path, dest_dir_path, name);
             }
         }
-        catch (e_3_1) { e_3 = { error: e_3_1 }; }
+        catch (e_1_1) { e_1 = { error: e_1_1 }; }
         finally {
             try {
                 if (_b && !_b.done && (_c = _a.return)) _c.call(_a);
             }
-            finally { if (e_3) throw e_3.error; }
+            finally { if (e_1) throw e_1.error; }
         }
         exports.execSyncNoCmdTrace("rm -r " + tarball_dir_path);
     }
     else {
         fs_move("MOVE", tarball_dir_path, dest_dir_path);
     }
-    var e_3, _c;
+    var e_1, _c;
 }
 exports.download_and_extract_tarball = download_and_extract_tarball;
 function fs_ls(dir_path, mode, showHidden) {

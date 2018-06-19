@@ -80,7 +80,8 @@ scriptLib.enableCmdTrace();
                     }
                     finally { if (e_1) throw e_1.error; }
                 }
-                scriptLib.fs_move("MOVE", dir_path, dir_path_copy, "file2.txt");
+                //scriptLib.fs_move("MOVE", dir_path, dir_path_copy, "file2.txt");
+                scriptLib.fs_move("MOVE", dir_path, dir_path_copy, path.join(dir_path_copy, "file2.txt"));
                 console.assert(!fs.existsSync(path.join(dir_path, "file2.txt")));
                 scriptLib.createSymlink(path.join(dir_path_copy, "file2.txt"), path.join(dir_path, "file2.txt"));
                 console.assert(scriptLib.fs_areSame(dir_path, dir_path_copy));
