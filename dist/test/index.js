@@ -14,8 +14,8 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
     function step(op) {
         if (f) throw new TypeError("Generator is already executing.");
         while (_) try {
-            if (f = 1, y && (t = y[op[0] & 2 ? "return" : op[0] ? "throw" : "next"]) && !(t = t.call(y, op[1])).done) return t;
-            if (y = 0, t) op = [0, t.value];
+            if (f = 1, y && (t = op[0] & 2 ? y["return"] : op[0] ? y["throw"] || ((t = y["return"]) && t.call(y), 0) : y.next) && !(t = t.call(y, op[1])).done) return t;
+            if (y = 0, t) op = [op[0] & 2, t.value];
             switch (op[0]) {
                 case 0: case 1: t = op; break;
                 case 4: _.label++; return { value: op[1], done: false };
@@ -34,6 +34,22 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
         if (op[0] & 5) throw op[1]; return { value: op[0] ? op[1] : void 0, done: true };
     }
 };
+var __read = (this && this.__read) || function (o, n) {
+    var m = typeof Symbol === "function" && o[Symbol.iterator];
+    if (!m) return o;
+    var i = m.call(o), r, ar = [], e;
+    try {
+        while ((n === void 0 || n-- > 0) && !(r = i.next()).done) ar.push(r.value);
+    }
+    catch (error) { e = { error: error }; }
+    finally {
+        try {
+            if (r && !r.done && (m = i["return"])) m.call(i);
+        }
+        finally { if (e) throw e.error; }
+    }
+    return ar;
+};
 var __values = (this && this.__values) || function (o) {
     var m = typeof Symbol === "function" && o[Symbol.iterator], i = 0;
     if (m) return m.call(o);
@@ -49,12 +65,35 @@ Object.defineProperty(exports, "__esModule", { value: true });
 var scriptLib = require("../lib");
 var path = require("path");
 var fs = require("fs");
-scriptLib.enableCmdTrace();
+process.removeAllListeners("unhandledRejection");
+process.once("unhandledRejection", function (error) { throw error; });
 (function () { return __awaiter(_this, void 0, void 0, function () {
-    var dir_path, dir_path_copy, _a, _b, name, _c, exec, onSuccess, _d, _e, e_1, _f;
-    return __generator(this, function (_g) {
-        switch (_g.label) {
+    var e_1, _a, _b, p_wget, p_node, url, before, _c, _d, _e, _f, _g, dir_path, dir_path_copy, _h, _j, name, _k, exec, onSuccess, _l, _m;
+    return __generator(this, function (_o) {
+        switch (_o.label) {
             case 0:
+                _b = __read(["/tmp/v_wget", "/tmp/v_node"], 2), p_wget = _b[0], p_node = _b[1];
+                scriptLib.execSync("rm -f " + p_wget + " " + p_node);
+                url = "github.com/jquery/jquery/archive/3.3.1.tar.gz";
+                before = Date.now();
+                return [4 /*yield*/, scriptLib.web_get(url, p_node)];
+            case 1:
+                _o.sent();
+                console.log("node: " + (Date.now() - before) + " ms");
+                before = Date.now();
+                return [4 /*yield*/, scriptLib.exec("wget -nc " + url + " -q -O " + p_wget)];
+            case 2:
+                _o.sent();
+                console.log("wget: " + (Date.now() - before) + " ms");
+                console.assert(scriptLib.fs_areSame(p_wget, p_node));
+                scriptLib.execSync("rm -f " + p_wget + " " + p_node);
+                _d = (_c = console).assert;
+                _e = require("../../package.json")["name"];
+                _g = (_f = JSON).parse;
+                return [4 /*yield*/, scriptLib.web_get("https://raw.githubusercontent.com/garronej/scripting-tools/master/package.json")];
+            case 3:
+                _d.apply(_c, [_e ===
+                        _g.apply(_f, [_o.sent()])["name"]]);
                 console.assert(scriptLib.find_module_path("typescript", path.join(__dirname, "../.."))
                     ===
                         path.join(__dirname, "..", "..", "node_modules/typescript"));
@@ -68,15 +107,15 @@ scriptLib.enableCmdTrace();
                 console.assert(scriptLib.fs_areSame(dir_path, dir_path_copy));
                 scriptLib.execSync("echo \"(modified)\" >> file2.txt", { "cwd": dir_path });
                 try {
-                    for (_a = __values(scriptLib.fs_ls(dir_path)), _b = _a.next(); !_b.done; _b = _a.next()) {
-                        name = _b.value;
+                    for (_h = __values(scriptLib.fs_ls(dir_path)), _j = _h.next(); !_j.done; _j = _h.next()) {
+                        name = _j.value;
                         console.assert(scriptLib.fs_areSame(dir_path, dir_path_copy, name) === (name !== "file2.txt"));
                     }
                 }
                 catch (e_1_1) { e_1 = { error: e_1_1 }; }
                 finally {
                     try {
-                        if (_b && !_b.done && (_f = _a.return)) _f.call(_a);
+                        if (_j && !_j.done && (_a = _h.return)) _a.call(_h);
                     }
                     finally { if (e_1) throw e_1.error; }
                 }
@@ -85,24 +124,29 @@ scriptLib.enableCmdTrace();
                 console.assert(!fs.existsSync(path.join(dir_path, "file2.txt")));
                 scriptLib.createSymlink(path.join(dir_path_copy, "file2.txt"), path.join(dir_path, "file2.txt"));
                 console.assert(scriptLib.fs_areSame(dir_path, dir_path_copy));
-                scriptLib.download_and_extract_tarball("https://github.com/jquery/jquery/archive/3.3.1.tar.gz", dir_path, "MERGE");
-                scriptLib.download_and_extract_tarball("https://github.com/jquery/jquery/archive/3.3.1.tar.gz", dir_path_copy, "OVERWRITE IF EXIST");
+                return [4 /*yield*/, scriptLib.download_and_extract_tarball(url, dir_path, "MERGE")];
+            case 4:
+                _o.sent();
+                return [4 /*yield*/, scriptLib.download_and_extract_tarball(url, dir_path_copy, "OVERWRITE IF EXIST")];
+            case 5:
+                _o.sent();
+                scriptLib.enableCmdTrace();
                 scriptLib.execSync("rm -rf " + dir_path + " " + dir_path_copy);
-                _c = scriptLib.start_long_running_process("Phony process"), exec = _c.exec, onSuccess = _c.onSuccess;
-                _e = (_d = console).assert;
+                _k = scriptLib.start_long_running_process("Phony process"), exec = _k.exec, onSuccess = _k.onSuccess;
+                _m = (_l = console).assert;
                 return [4 /*yield*/, exec("echo \"foobar\"")];
-            case 1:
-                _e.apply(_d, [(_g.sent()) === "foobar\n"]);
+            case 6:
+                _m.apply(_l, [(_o.sent()) === "foobar\n"]);
                 return [4 /*yield*/, new Promise(function (resolve) { return setTimeout(resolve, 1000); })];
-            case 2:
-                _g.sent();
+            case 7:
+                _o.sent();
                 onSuccess();
                 console.assert(scriptLib.sh_eval("which cat") === "/bin/cat");
                 console.assert(scriptLib.sh_if("cat tmp/file_that_does_not_exist.dummy") === false);
                 console.assert(scriptLib.sh_if("which git") === true);
                 return [4 /*yield*/, scriptLib.apt_get_install_if_missing("git")];
-            case 3:
-                _g.sent();
+            case 8:
+                _o.sent();
                 console.log(scriptLib.colorize("ALL TESTS PASSED", "GREEN"));
                 return [2 /*return*/];
         }

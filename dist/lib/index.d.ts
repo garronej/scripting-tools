@@ -33,8 +33,6 @@ export declare function execSync(cmd: string, options?: child_process.ExecSyncOp
 export declare function execSyncTrace(cmd: string, options?: child_process.ExecSyncOptions & {
     unix_user?: string;
 }): void;
-/** Same as execSync except that it dose not print cmd even if cmdTrace have been enabled */
-export declare const execSyncNoCmdTrace: typeof execSync;
 /**
  *
  * Like execSync but stderr is not forwarded.
@@ -168,7 +166,9 @@ export declare function fs_move(action: "COPY" | "MOVE", relative_from_path_src:
  * ./dir/file2.txt
  *
  */
-export declare function download_and_extract_tarball(url: string, dest_dir_path: string, mode: "MERGE" | "OVERWRITE IF EXIST"): void;
+export declare function download_and_extract_tarball(url: string, dest_dir_path: string, mode: "MERGE" | "OVERWRITE IF EXIST"): Promise<void>;
+export declare function web_get(url: string, file_path: string): Promise<void>;
+export declare function web_get(url: string): Promise<string>;
 export declare function fs_ls(dir_path: string, mode?: "FILENAME" | "ABSOLUTE PATH", showHidden?: boolean): string[];
 /**
  *

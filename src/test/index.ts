@@ -2,15 +2,47 @@ import * as scriptLib from "../lib";
 import * as path from "path";
 import * as fs from "fs";
 
-scriptLib.enableCmdTrace();
+
+process.removeAllListeners("unhandledRejection");
+process.once("unhandledRejection", error => { throw error; });
 
 (async () => {
+
+    const [ p_wget, p_node ] = [ "/tmp/v_wget", "/tmp/v_node" ];
+
+    scriptLib.execSync(`rm -f ${p_wget} ${p_node}`);
+
+    const url= "github.com/jquery/jquery/archive/3.3.1.tar.gz";
+    //const url = "https://github.com/garronej/asterisk/releases/download/latest/asterisk_armv7l.tar.gz";
+
+    let before= Date.now();
+
+    await scriptLib.web_get(url, p_node);
+
+    console.log(`node: ${Date.now() - before} ms`);
+
+    before= Date.now();
+
+    await scriptLib.exec(`wget -nc ${url} -q -O ${p_wget}`);
+
+    console.log(`wget: ${Date.now() - before} ms`);
+
+    console.assert(scriptLib.fs_areSame(p_wget,p_node));
+
+    scriptLib.execSync(`rm -f ${p_wget} ${p_node}`);
+
+    console.assert(
+        require("../../package.json")["name"]
+        === 
+        JSON.parse(await scriptLib.web_get("https://raw.githubusercontent.com/garronej/scripting-tools/master/package.json"))["name"]
+    );
 
     console.assert(
         scriptLib.find_module_path("typescript", path.join(__dirname, "../.."))
         ===
         path.join(__dirname, "..", "..", "node_modules/typescript")
     );
+
 
     const dir_path = "/var/tmp/scripting-tools-tests";
     const dir_path_copy = path.join(dir_path, "..", `${path.basename(dir_path)}-copy`);
@@ -45,8 +77,10 @@ scriptLib.enableCmdTrace();
 
     console.assert(scriptLib.fs_areSame(dir_path, dir_path_copy));
 
-    scriptLib.download_and_extract_tarball("https://github.com/jquery/jquery/archive/3.3.1.tar.gz", dir_path, "MERGE");
-    scriptLib.download_and_extract_tarball("https://github.com/jquery/jquery/archive/3.3.1.tar.gz", dir_path_copy, "OVERWRITE IF EXIST");
+    await scriptLib.download_and_extract_tarball(url, dir_path, "MERGE");
+    await scriptLib.download_and_extract_tarball(url, dir_path_copy, "OVERWRITE IF EXIST");
+
+    scriptLib.enableCmdTrace();
 
     scriptLib.execSync(`rm -rf ${dir_path} ${dir_path_copy}`);
 

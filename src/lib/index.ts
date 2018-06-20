@@ -2,6 +2,9 @@ import * as child_process from "child_process";
 import * as readline from "readline";
 import * as fs from "fs";
 import * as path from "path";
+import * as runExclusive from "run-exclusive";
+import * as https from "https";
+import * as http from "http";
 
 /** 
  * After this function is called every call to execSync 
@@ -117,7 +120,7 @@ export function execSyncTrace(
 }
 
 /** Same as execSync except that it dose not print cmd even if cmdTrace have been enabled */
-export const execSyncNoCmdTrace: typeof execSync = (...args)=> {
+const execSyncNoCmdTrace: typeof execSync = (...args)=> {
 
     const enabled_back = traceCmdIfEnabled.enabled;
 
@@ -636,34 +639,41 @@ export function fs_move(
  * ./dir/file2.txt
  *
  */
-export function download_and_extract_tarball(
+export async function download_and_extract_tarball(
     url: string,
     dest_dir_path: string,
     mode: "MERGE" | "OVERWRITE IF EXIST"
 ) {
 
-    const tarball_dir_path = `/tmp/_${Date.now()}`
+    const { exec, onSuccess, onError } = start_long_running_process(`Downloading ${url} and extracting to ${dest_dir_path}`);
+
+    const tarball_dir_path = `/tmp/_${Buffer.from(url,"utf8").toString("hex")}`;
     const tarball_path = `${tarball_dir_path}.tar.gz`;
 
-    if (traceCmdIfEnabled.enabled) {
-        process.stdout.write(`Downloading ${url}...`);
+    if( fs.existsSync(tarball_dir_path) || fs.existsSync(tarball_path) ){
+
+        await exec(`rm -rf ${tarball_dir_path} ${tarball_path}`);
+
     }
 
-    execSyncNoCmdTrace(`wget -nc ${url} -q -O ${tarball_path}`);
+    //execSyncNoCmdTrace(`wget -nc ${url} -q -O ${tarball_path}`);
 
-    if (traceCmdIfEnabled.enabled) {
-        process.stdout.write(`Extracting to ${dest_dir_path}...`);
+    try{
+
+        await web_get(url, tarball_path);
+
+    }catch(error){
+
+        onError("Download failed");
+        throw error;
+
     }
 
-    execSyncNoCmdTrace(`mkdir -p ${tarball_dir_path}`);
+    await exec(`mkdir ${tarball_dir_path}`);
 
-    execSyncNoCmdTrace(`tar -xzf ${tarball_path} -C ${tarball_dir_path}`);
+    await exec(`tar -xzf ${tarball_path} -C ${tarball_dir_path}`);
 
-    if (traceCmdIfEnabled.enabled) {
-        console.log(colorize("DONE", "GREEN"))
-    }
-
-    execSyncNoCmdTrace(`rm ${tarball_path}`);
+    await exec(`rm ${tarball_path}`);
 
     if (mode === "MERGE") {
 
@@ -673,13 +683,100 @@ export function download_and_extract_tarball(
 
         }
 
-        execSyncNoCmdTrace(`rm -r ${tarball_dir_path}`);
+        await exec(`rm -r ${tarball_dir_path}`);
 
     } else {
 
         fs_move("MOVE", tarball_dir_path, dest_dir_path);
 
     }
+
+    onSuccess();
+
+}
+
+
+export function web_get(url: string, file_path: string): Promise<void>;
+export function web_get(url: string): Promise<string>;
+export function web_get(url: string, file_path?: string): Promise<string | void> {
+
+    if( !url.startsWith("http") ){
+        url= `http://${url}`;
+    }
+
+    if (!!file_path) {
+        fs.writeFileSync(file_path, new Buffer(0));
+    }
+
+    return new Promise(
+        (resolve, reject) => {
+
+            const get: typeof https.get= url.startsWith("https")?https.get.bind(https):http.get.bind(http);
+
+            get(url, res => {
+
+                if ( `${res.statusCode}`.startsWith("30") ) {
+
+                    const { location: url } = res.headers;
+
+                    if( !url ){
+                        reject(new Error("Missing redirect location"));
+                        return;
+                    }
+
+                    web_get(url, file_path!)
+                        .then(out => resolve(out))
+                        .catch(error => reject(error));
+
+                    return;
+
+                }
+
+                if (!!file_path) {
+
+                    const writeToFile = runExclusive.build(
+                        (chunk: Buffer) => new Promise<void>(
+                            resolve => fs.appendFile(file_path, chunk, error => {
+
+                                if (!!error) {
+
+                                    runExclusive.cancelAllQueuedCalls(writeToFile);
+                                    res.removeAllListeners("data");
+                                    res.removeAllListeners("end");
+
+                                    reject(error);
+
+                                    return;
+
+                                }
+
+                                resolve();
+
+                            })
+                        )
+                    );
+
+                    let prWrote: Promise<void> = Promise.resolve();
+
+                    res.on("data", (chunk: Buffer) => prWrote = writeToFile(chunk));
+
+                    res.once("end", () => prWrote.then(() => resolve()));
+
+                } else {
+
+                    let data = new Buffer(0);
+
+                    res.on("data", (chunk: Buffer) => data = Buffer.from(data.toString("hex") + chunk.toString("hex"), "hex"));
+
+                    res.once("end", () => resolve(data.toString("utf8")));
+
+                }
+
+
+            }).once("error", error => reject(error));
+
+        }
+    );
 
 }
 

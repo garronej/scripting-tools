@@ -22,8 +22,8 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
     function step(op) {
         if (f) throw new TypeError("Generator is already executing.");
         while (_) try {
-            if (f = 1, y && (t = y[op[0] & 2 ? "return" : op[0] ? "throw" : "next"]) && !(t = t.call(y, op[1])).done) return t;
-            if (y = 0, t) op = [0, t.value];
+            if (f = 1, y && (t = op[0] & 2 ? y["return"] : op[0] ? y["throw"] || ((t = y["return"]) && t.call(y), 0) : y.next) && !(t = t.call(y, op[1])).done) return t;
+            if (y = 0, t) op = [op[0] & 2, t.value];
             switch (op[0]) {
                 case 0: case 1: t = op; break;
                 case 4: _.label++; return { value: op[1], done: false };
@@ -57,6 +57,9 @@ var child_process = require("child_process");
 var readline = require("readline");
 var fs = require("fs");
 var path = require("path");
+var runExclusive = require("run-exclusive");
+var https = require("https");
+var http = require("http");
 /**
  * After this function is called every call to execSync
  * or exec will print the unix commands being executed.
@@ -135,7 +138,7 @@ function execSyncTrace(cmd, options) {
 }
 exports.execSyncTrace = execSyncTrace;
 /** Same as execSync except that it dose not print cmd even if cmdTrace have been enabled */
-exports.execSyncNoCmdTrace = function () {
+var execSyncNoCmdTrace = function () {
     var args = [];
     for (var _i = 0; _i < arguments.length; _i++) {
         args[_i] = arguments[_i];
@@ -281,7 +284,7 @@ exports.apt_get_install_if_missing = apt_get_install_if_missing;
 (function (apt_get_install_if_missing) {
     function isPkgInstalled(package_name) {
         try {
-            console.assert(!!exports.execSyncNoCmdTrace("dpkg-query -W -f='${Status}' " + package_name, { "stdio": "pipe" })
+            console.assert(!!execSyncNoCmdTrace("dpkg-query -W -f='${Status}' " + package_name, { "stdio": "pipe" })
                 .match(/^install ok installed$/));
         }
         catch (_a) {
@@ -292,7 +295,7 @@ exports.apt_get_install_if_missing = apt_get_install_if_missing;
     apt_get_install_if_missing.isPkgInstalled = isPkgInstalled;
     function doesHaveProg(prog) {
         try {
-            exports.execSyncNoCmdTrace("which " + prog);
+            execSyncNoCmdTrace("which " + prog);
         }
         catch (_a) {
             return false;
@@ -342,7 +345,7 @@ exports.apt_get_install = apt_get_install;
 (function (apt_get_install) {
     apt_get_install.isFirst = true;
     function record_installed_package(file_json_path, package_name) {
-        exports.execSyncNoCmdTrace("touch " + file_json_path);
+        execSyncNoCmdTrace("touch " + file_json_path);
         var raw = fs.readFileSync(file_json_path).toString("utf8");
         var list = raw === "" ? [] : JSON.parse(raw);
         if (!list.find(function (p) { return p === package_name; })) {
@@ -379,7 +382,7 @@ function find_module_path(module_name, module_dir_path) {
         "-path \\*/node_modules/" + module_name + "/package.json",
         "-exec dirname {} \\;"
     ].join(" ");
-    var match = exports.execSyncNoCmdTrace(cmd, { "stdio": "pipe" }).slice(0, -1).split("\n");
+    var match = execSyncNoCmdTrace(cmd, { "stdio": "pipe" }).slice(0, -1).split("\n");
     if (!match.length) {
         throw new Error(module_name + " not found in " + module_dir_path);
     }
@@ -414,7 +417,7 @@ function fs_areSame(relative_from_path1, relative_from_path2, relative_to_path) 
     if (relative_to_path === void 0) { relative_to_path = "."; }
     relative_to_path = fs_areSame.get_relative_to_path(relative_from_path1, relative_from_path2, relative_to_path);
     try {
-        exports.execSyncNoCmdTrace([
+        execSyncNoCmdTrace([
             "diff -r",
             path.join(relative_from_path1, relative_to_path),
             path.join(relative_from_path2, relative_to_path)
@@ -466,10 +469,10 @@ function fs_move(action, relative_from_path_src, relative_from_path_dest, relati
     var dst_path = path.join(relative_from_path_dest, relative_to_path);
     if (!fs_areSame(src_path, dst_path)) {
         if (!fs.existsSync(dst_path)) {
-            exports.execSyncNoCmdTrace("mkdir -p " + dst_path);
+            execSyncNoCmdTrace("mkdir -p " + dst_path);
         }
-        exports.execSyncNoCmdTrace("rm -rf " + dst_path);
-        exports.execSyncNoCmdTrace([
+        execSyncNoCmdTrace("rm -rf " + dst_path);
+        execSyncNoCmdTrace([
             action === "COPY" ? "cp -rp" : "mv",
             src_path,
             dst_path
@@ -477,7 +480,7 @@ function fs_move(action, relative_from_path_src, relative_from_path_dest, relati
     }
     else {
         if (action === "MOVE") {
-            exports.execSyncNoCmdTrace("rm -r " + src_path);
+            execSyncNoCmdTrace("rm -r " + src_path);
         }
     }
 }
@@ -510,47 +513,116 @@ exports.fs_move = fs_move;
  *
  */
 function download_and_extract_tarball(url, dest_dir_path, mode) {
-    var tarball_dir_path = "/tmp/_" + Date.now();
-    var tarball_path = tarball_dir_path + ".tar.gz";
-    if (traceCmdIfEnabled.enabled) {
-        process.stdout.write("Downloading " + url + "...");
-    }
-    exports.execSyncNoCmdTrace("wget -nc " + url + " -q -O " + tarball_path);
-    if (traceCmdIfEnabled.enabled) {
-        process.stdout.write("Extracting to " + dest_dir_path + "...");
-    }
-    exports.execSyncNoCmdTrace("mkdir -p " + tarball_dir_path);
-    exports.execSyncNoCmdTrace("tar -xzf " + tarball_path + " -C " + tarball_dir_path);
-    if (traceCmdIfEnabled.enabled) {
-        console.log(colorize("DONE", "GREEN"));
-    }
-    exports.execSyncNoCmdTrace("rm " + tarball_path);
-    if (mode === "MERGE") {
-        try {
-            for (var _a = __values(fs_ls(tarball_dir_path)), _b = _a.next(); !_b.done; _b = _a.next()) {
-                var name = _b.value;
-                fs_move("MOVE", tarball_dir_path, dest_dir_path, name);
+    return __awaiter(this, void 0, void 0, function () {
+        var e_1, _a, _b, exec, onSuccess, onError, tarball_dir_path, tarball_path, error_3, _c, _d, name;
+        return __generator(this, function (_e) {
+            switch (_e.label) {
+                case 0:
+                    _b = start_long_running_process("Downloading " + url + " and extracting to " + dest_dir_path), exec = _b.exec, onSuccess = _b.onSuccess, onError = _b.onError;
+                    tarball_dir_path = "/tmp/_" + Buffer.from(url, "utf8").toString("hex");
+                    tarball_path = tarball_dir_path + ".tar.gz";
+                    if (!(fs.existsSync(tarball_dir_path) || fs.existsSync(tarball_path))) return [3 /*break*/, 2];
+                    return [4 /*yield*/, exec("rm -rf " + tarball_dir_path + " " + tarball_path)];
+                case 1:
+                    _e.sent();
+                    _e.label = 2;
+                case 2:
+                    _e.trys.push([2, 4, , 5]);
+                    return [4 /*yield*/, web_get(url, tarball_path)];
+                case 3:
+                    _e.sent();
+                    return [3 /*break*/, 5];
+                case 4:
+                    error_3 = _e.sent();
+                    onError("Download failed");
+                    throw error_3;
+                case 5: return [4 /*yield*/, exec("mkdir " + tarball_dir_path)];
+                case 6:
+                    _e.sent();
+                    return [4 /*yield*/, exec("tar -xzf " + tarball_path + " -C " + tarball_dir_path)];
+                case 7:
+                    _e.sent();
+                    return [4 /*yield*/, exec("rm " + tarball_path)];
+                case 8:
+                    _e.sent();
+                    if (!(mode === "MERGE")) return [3 /*break*/, 10];
+                    try {
+                        for (_c = __values(fs_ls(tarball_dir_path)), _d = _c.next(); !_d.done; _d = _c.next()) {
+                            name = _d.value;
+                            fs_move("MOVE", tarball_dir_path, dest_dir_path, name);
+                        }
+                    }
+                    catch (e_1_1) { e_1 = { error: e_1_1 }; }
+                    finally {
+                        try {
+                            if (_d && !_d.done && (_a = _c.return)) _a.call(_c);
+                        }
+                        finally { if (e_1) throw e_1.error; }
+                    }
+                    return [4 /*yield*/, exec("rm -r " + tarball_dir_path)];
+                case 9:
+                    _e.sent();
+                    return [3 /*break*/, 11];
+                case 10:
+                    fs_move("MOVE", tarball_dir_path, dest_dir_path);
+                    _e.label = 11;
+                case 11:
+                    onSuccess();
+                    return [2 /*return*/];
             }
-        }
-        catch (e_1_1) { e_1 = { error: e_1_1 }; }
-        finally {
-            try {
-                if (_b && !_b.done && (_c = _a.return)) _c.call(_a);
-            }
-            finally { if (e_1) throw e_1.error; }
-        }
-        exports.execSyncNoCmdTrace("rm -r " + tarball_dir_path);
-    }
-    else {
-        fs_move("MOVE", tarball_dir_path, dest_dir_path);
-    }
-    var e_1, _c;
+        });
+    });
 }
 exports.download_and_extract_tarball = download_and_extract_tarball;
+function web_get(url, file_path) {
+    if (!url.startsWith("http")) {
+        url = "http://" + url;
+    }
+    if (!!file_path) {
+        fs.writeFileSync(file_path, new Buffer(0));
+    }
+    return new Promise(function (resolve, reject) {
+        var get = url.startsWith("https") ? https.get.bind(https) : http.get.bind(http);
+        get(url, function (res) {
+            if (("" + res.statusCode).startsWith("30")) {
+                var url_1 = res.headers.location;
+                if (!url_1) {
+                    reject(new Error("Missing redirect location"));
+                    return;
+                }
+                web_get(url_1, file_path)
+                    .then(function (out) { return resolve(out); })
+                    .catch(function (error) { return reject(error); });
+                return;
+            }
+            if (!!file_path) {
+                var writeToFile_1 = runExclusive.build(function (chunk) { return new Promise(function (resolve) { return fs.appendFile(file_path, chunk, function (error) {
+                    if (!!error) {
+                        runExclusive.cancelAllQueuedCalls(writeToFile_1);
+                        res.removeAllListeners("data");
+                        res.removeAllListeners("end");
+                        reject(error);
+                        return;
+                    }
+                    resolve();
+                }); }); });
+                var prWrote_1 = Promise.resolve();
+                res.on("data", function (chunk) { return prWrote_1 = writeToFile_1(chunk); });
+                res.once("end", function () { return prWrote_1.then(function () { return resolve(); }); });
+            }
+            else {
+                var data_1 = new Buffer(0);
+                res.on("data", function (chunk) { return data_1 = Buffer.from(data_1.toString("hex") + chunk.toString("hex"), "hex"); });
+                res.once("end", function () { return resolve(data_1.toString("utf8")); });
+            }
+        }).once("error", function (error) { return reject(error); });
+    });
+}
+exports.web_get = web_get;
 function fs_ls(dir_path, mode, showHidden) {
     if (mode === void 0) { mode = "FILENAME"; }
     if (showHidden === void 0) { showHidden = false; }
-    return exports.execSyncNoCmdTrace("ls" + (showHidden ? " -a" : ""), { "cwd": dir_path })
+    return execSyncNoCmdTrace("ls" + (showHidden ? " -a" : ""), { "cwd": dir_path })
         .slice(0, -1)
         .split("\n")
         .map(function (name) { return mode === "ABSOLUTE PATH" ? path.join(dir_path, name) : name; });
@@ -565,9 +637,9 @@ exports.fs_ls = fs_ls;
  */
 function createSymlink(src_path, dst_path) {
     if (!fs.existsSync(dst_path)) {
-        exports.execSyncNoCmdTrace("mkdir -p " + dst_path);
+        execSyncNoCmdTrace("mkdir -p " + dst_path);
     }
-    exports.execSyncNoCmdTrace("rm -rf " + dst_path);
+    execSyncNoCmdTrace("rm -rf " + dst_path);
     execSync("ln -s " + src_path + " " + dst_path);
 }
 exports.createSymlink = createSymlink;
@@ -577,7 +649,7 @@ function createScript(file_path, content) {
         console.log("Creating script " + file_path);
     }
     fs.writeFileSync(file_path, Buffer.from(content, "utf8"));
-    exports.execSyncNoCmdTrace("chmod +x " + file_path);
+    execSyncNoCmdTrace("chmod +x " + file_path);
 }
 exports.createScript = createScript;
 /**
@@ -593,7 +665,7 @@ exports.createScript = createScript;
 function sh_eval(cmd) {
     var res;
     try {
-        res = exports.execSyncNoCmdTrace(cmd, { "stdio": "pipe" });
+        res = execSyncNoCmdTrace(cmd, { "stdio": "pipe" });
     }
     catch (_a) {
         return "";
@@ -607,7 +679,7 @@ exports.sh_eval = sh_eval;
  */
 function sh_if(cmd) {
     try {
-        exports.execSyncNoCmdTrace(cmd, { "stdio": "pipe" });
+        execSyncNoCmdTrace(cmd, { "stdio": "pipe" });
     }
     catch (_a) {
         return false;
