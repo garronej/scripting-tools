@@ -515,7 +515,7 @@ function download_and_extract_tarball(url, dest_dir_path, mode) {
     if (traceCmdIfEnabled.enabled) {
         process.stdout.write("Downloading " + url + "...");
     }
-    exports.execSyncNoCmdTrace("wget " + url + " -q -O " + tarball_path);
+    exports.execSyncNoCmdTrace("wget -nc " + url + " -q -O " + tarball_path);
     if (traceCmdIfEnabled.enabled) {
         process.stdout.write("Extracting to " + dest_dir_path + "...");
     }

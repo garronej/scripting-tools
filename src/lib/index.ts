@@ -649,7 +649,7 @@ export function download_and_extract_tarball(
         process.stdout.write(`Downloading ${url}...`);
     }
 
-    execSyncNoCmdTrace(`wget ${url} -q -O ${tarball_path}`)
+    execSyncNoCmdTrace(`wget -nc ${url} -q -O ${tarball_path}`);
 
     if (traceCmdIfEnabled.enabled) {
         process.stdout.write(`Extracting to ${dest_dir_path}...`);
