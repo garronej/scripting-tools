@@ -6,34 +6,36 @@ import * as fs from "fs";
 process.removeAllListeners("unhandledRejection");
 process.once("unhandledRejection", error => { throw error; });
 
+
 (async () => {
 
-    const [ p_wget, p_node ] = [ "/tmp/v_wget", "/tmp/v_node" ];
+    const [p_wget, p_node] = ["/tmp/v_wget", "/tmp/v_node"];
 
     scriptLib.execSync(`rm -f ${p_wget} ${p_node}`);
 
     const url= "github.com/jquery/jquery/archive/3.3.1.tar.gz";
     //const url = "https://github.com/garronej/asterisk/releases/download/latest/asterisk_armv7l.tar.gz";
+    //const url = "https://ubuntu-fr.org/telechargement?action=dl";
 
-    let before= Date.now();
+    let before = Date.now();
 
     await scriptLib.web_get(url, p_node);
 
     console.log(`node: ${Date.now() - before} ms`);
 
-    before= Date.now();
+    before = Date.now();
 
     await scriptLib.exec(`wget -nc ${url} -q -O ${p_wget}`);
 
     console.log(`wget: ${Date.now() - before} ms`);
 
-    console.assert(scriptLib.fs_areSame(p_wget,p_node));
+    console.assert(scriptLib.fs_areSame(p_wget, p_node));
 
     scriptLib.execSync(`rm -f ${p_wget} ${p_node}`);
 
     console.assert(
         require("../../package.json")["name"]
-        === 
+        ===
         JSON.parse(await scriptLib.web_get("https://raw.githubusercontent.com/garronej/scripting-tools/master/package.json"))["name"]
     );
 
@@ -66,7 +68,7 @@ process.once("unhandledRejection", error => { throw error; });
     }
 
     //scriptLib.fs_move("MOVE", dir_path, dir_path_copy, "file2.txt");
-    scriptLib.fs_move("MOVE", dir_path, dir_path_copy, path.join(dir_path_copy,"file2.txt"));
+    scriptLib.fs_move("MOVE", dir_path, dir_path_copy, path.join(dir_path_copy, "file2.txt"));
 
     console.assert(!fs.existsSync(path.join(dir_path, "file2.txt")));
 
@@ -94,8 +96,8 @@ process.once("unhandledRejection", error => { throw error; });
 
     console.assert(scriptLib.sh_eval("which cat") === "/bin/cat");
 
-    console.assert( scriptLib.sh_if("cat tmp/file_that_does_not_exist.dummy") === false )
-    console.assert( scriptLib.sh_if("which git") === true );
+    console.assert(scriptLib.sh_if("cat tmp/file_that_does_not_exist.dummy") === false)
+    console.assert(scriptLib.sh_if("which git") === true);
 
     await scriptLib.apt_get_install_if_missing("git");
 
@@ -103,3 +105,24 @@ process.once("unhandledRejection", error => { throw error; });
 
 })();
 
+/*
+(async () => {
+
+    while (true) {
+
+        await new Promise(resolve => setTimeout(resolve, 2000));
+
+
+        (function print_mem() {
+
+            const used = process.memoryUsage();
+            for (let key in used) {
+                console.log(`${key} ${Math.round(used[key] / 1024 / 1024 * 100) / 100} MB`);
+            }
+
+        })();
+
+    }
+
+})();
+*/

@@ -57,7 +57,6 @@ var child_process = require("child_process");
 var readline = require("readline");
 var fs = require("fs");
 var path = require("path");
-var runExclusive = require("run-exclusive");
 var https = require("https");
 var http = require("http");
 /**
@@ -596,23 +595,15 @@ function web_get(url, file_path) {
                 return;
             }
             if (!!file_path) {
-                var writeToFile_1 = runExclusive.build(function (chunk) { return new Promise(function (resolve) { return fs.appendFile(file_path, chunk, function (error) {
-                    if (!!error) {
-                        runExclusive.cancelAllQueuedCalls(writeToFile_1);
-                        res.removeAllListeners("data");
-                        res.removeAllListeners("end");
-                        reject(error);
-                        return;
-                    }
-                    resolve();
-                }); }); });
-                var prWrote_1 = Promise.resolve();
-                res.on("data", function (chunk) { return prWrote_1 = writeToFile_1(chunk); });
-                res.once("end", function () { return prWrote_1.then(function () { return resolve(); }); });
+                var fsWriteStream = fs.createWriteStream(file_path);
+                res.pipe(fsWriteStream);
+                fsWriteStream.once("finish", function () { return resolve(); });
+                res.once("error", function (error) { return reject(error); });
+                fsWriteStream.once("error", function (error) { return reject(error); });
             }
             else {
                 var data_1 = new Buffer(0);
-                res.on("data", function (chunk) { return data_1 = Buffer.from(data_1.toString("hex") + chunk.toString("hex"), "hex"); });
+                res.on("data", function (chunk) { return data_1 = Buffer.concat([data_1, chunk]); });
                 res.once("end", function () { return resolve(data_1.toString("utf8")); });
             }
         }).once("error", function (error) { return reject(error); });

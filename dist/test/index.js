@@ -152,3 +152,24 @@ process.once("unhandledRejection", function (error) { throw error; });
         }
     });
 }); })();
+/*
+(async () => {
+
+    while (true) {
+
+        await new Promise(resolve => setTimeout(resolve, 2000));
+
+
+        (function print_mem() {
+
+            const used = process.memoryUsage();
+            for (let key in used) {
+                console.log(`${key} ${Math.round(used[key] / 1024 / 1024 * 100) / 100} MB`);
+            }
+
+        })();
+
+    }
+
+})();
+*/ 

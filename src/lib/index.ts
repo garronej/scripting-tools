@@ -2,7 +2,6 @@ import * as child_process from "child_process";
 import * as readline from "readline";
 import * as fs from "fs";
 import * as path from "path";
-import * as runExclusive from "run-exclusive";
 import * as https from "https";
 import * as http from "http";
 
@@ -734,39 +733,21 @@ export function web_get(url: string, file_path?: string): Promise<string | void>
 
                 if (!!file_path) {
 
-                    const writeToFile = runExclusive.build(
-                        (chunk: Buffer) => new Promise<void>(
-                            resolve => fs.appendFile(file_path, chunk, error => {
+                    const fsWriteStream= fs.createWriteStream(file_path);
 
-                                if (!!error) {
+                    res.pipe(fsWriteStream);
 
-                                    runExclusive.cancelAllQueuedCalls(writeToFile);
-                                    res.removeAllListeners("data");
-                                    res.removeAllListeners("end");
+                    fsWriteStream.once("finish", ()=> resolve());
 
-                                    reject(error);
+                    res.once("error", error => reject(error));
 
-                                    return;
-
-                                }
-
-                                resolve();
-
-                            })
-                        )
-                    );
-
-                    let prWrote: Promise<void> = Promise.resolve();
-
-                    res.on("data", (chunk: Buffer) => prWrote = writeToFile(chunk));
-
-                    res.once("end", () => prWrote.then(() => resolve()));
+                    fsWriteStream.once("error", error=> reject(error));
 
                 } else {
 
                     let data = new Buffer(0);
 
-                    res.on("data", (chunk: Buffer) => data = Buffer.from(data.toString("hex") + chunk.toString("hex"), "hex"));
+                    res.on("data", (chunk: Buffer) => data = Buffer.concat([data, chunk]));
 
                     res.once("end", () => resolve(data.toString("utf8")));
 
