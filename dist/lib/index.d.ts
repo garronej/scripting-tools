@@ -5,6 +5,8 @@ import * as child_process from "child_process";
  * or exec will print the unix commands being executed.
  * */
 export declare function enableCmdTrace(): void;
+export declare function get_uid(unix_user: string): number;
+export declare function get_gid(unix_user: string): number;
 export declare function colorize(str: string, color: "GREEN" | "RED" | "YELLOW"): string;
 /**
  *
@@ -18,9 +20,7 @@ export declare function colorize(str: string, color: "GREEN" | "RED" | "YELLOW")
  * If enableTrace() have been called the command called will be printed.
  *
  */
-export declare function execSync(cmd: string, options?: child_process.ExecSyncOptions & {
-    unix_user?: string;
-}): string;
+export declare function execSync(cmd: string, options?: child_process.ExecSyncOptions): string;
 /**
  *
  * The cmd is printed before execution
@@ -30,9 +30,7 @@ export declare function execSync(cmd: string, options?: child_process.ExecSyncOp
  * stdio is set to "inherit" and thus should not be redefined.
  *
  */
-export declare function execSyncTrace(cmd: string, options?: child_process.ExecSyncOptions & {
-    unix_user?: string;
-}): void;
+export declare function execSyncTrace(cmd: string, options?: child_process.ExecSyncOptions): void;
 /**
  *
  * Like execSync but stderr is not forwarded.
@@ -43,13 +41,9 @@ export declare function execSyncTrace(cmd: string, options?: child_process.ExecS
  * stdio is set to "pipe" and thus should not be redefined.
  *
  */
-export declare function execSyncQuiet(cmd: string, options?: child_process.ExecSyncOptions & {
-    unix_user?: string;
-}): string;
+export declare function execSyncQuiet(cmd: string, options?: child_process.ExecSyncOptions): string;
 /** Same as execSync but async */
-export declare function exec(cmd: string, options?: child_process.ExecOptions & {
-    unix_user?: string;
-}): Promise<string>;
+export declare function exec(cmd: string, options?: child_process.ExecOptions): Promise<string>;
 /**
  *
  * Print a message and enable a moving loading bar.
@@ -196,3 +190,67 @@ export declare function sh_eval(cmd: string): string;
  * Does not print to stdout.
  */
 export declare function sh_if(cmd: string): boolean;
+/**
+ *
+ * Allow to schedule action to perform before exiting.
+ *
+ * The action handler will always be called before the process stop
+ * unless process.exit is explicitly called or if the process receive any signal other
+ * than the ones specified in the ExitCause.Signal["signal"] type.
+ *
+ * The process may stop for tree reasons:
+ * 1) If there is no more work scheduled.
+ * 2) If an uncaught exception it thrown ( or a unhandled promise rejection )
+ * 3) If a signal ( one of the supported )is sent to the process.
+ *
+ * To manually exit the process there is two option:
+ * - Call process.exit() but action handler will never be called.
+ * - Emit "beforeExit" on process object ( process.emit("beforeExit, NaN);
+ * Doing so you simulate stop condition N1.
+ *
+ * To define the return code set process.exitCode. The exit code can be set
+ * before emitting "beforeExit" or in the action handler.
+ *
+ * action can be synchronous or asynchronous.
+ * the action handler has [timeout] ms to complete.
+ * If it has not completed within this delay the process will
+ * be terminated anyway.
+ *
+ * Any uncaught exception thrown outside of the action handler
+ * while the action handler is running will be ignored.
+ *
+ * Whether the action handler complete by successfully or throw
+ * an exception the process will terminate with exit code set
+ * in process.exitCode at the time of the completion.
+ *
+ * (optional) if exitOnCause(exitCause) return false the action handler
+ * will not be called and the the process will continue as
+ * if nothing happened.
+ *
+ *
+ */
+export declare function setExitHandler(action: (exitCause: setExitHandler.ExitCause) => any, timeout?: number, exitOnCause?: (exitCause: Exclude<setExitHandler.ExitCause, setExitHandler.ExitCause.NothingElseToDo>) => boolean): void;
+export declare namespace setExitHandler {
+    type ExitCause = ExitCause.Signal | ExitCause.Exception | ExitCause.NothingElseToDo;
+    namespace ExitCause {
+        type Signal = {
+            type: "SIGNAL";
+            signal: keyof typeof Signal._obj;
+        };
+        namespace Signal {
+            const _obj: {
+                "SIGINT": null;
+                "SIGUSR2": null;
+            };
+            const list: Signal["signal"][];
+        }
+        type Exception = {
+            type: "EXCEPTION";
+            error: Error;
+        };
+        type NothingElseToDo = {
+            type: "NOTHING ELSE TO DO";
+        };
+    }
+    let log: typeof console.log;
+}

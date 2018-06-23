@@ -76,22 +76,14 @@ function traceCmdIfEnabled(cmd, options) {
 (function (traceCmdIfEnabled) {
     traceCmdIfEnabled.enabled = false;
 })(traceCmdIfEnabled || (traceCmdIfEnabled = {}));
-function fetch_id(options) {
-    if (!options) {
-        return;
-    }
-    if (!!options.unix_user) {
-        var unix_user_1 = options.unix_user;
-        delete options.unix_user;
-        var get_id = function (type) {
-            return parseInt(child_process.execSync("id -" + type + " " + unix_user_1)
-                .toString("utf8")
-                .slice(0, -1));
-        };
-        options.uid = get_id("u");
-        options.gid = get_id("g");
-    }
+function get_uid(unix_user) {
+    return parseInt(sh_eval("id -u " + unix_user));
 }
+exports.get_uid = get_uid;
+function get_gid(unix_user) {
+    return parseInt(sh_eval("id -g " + unix_user));
+}
+exports.get_gid = get_gid;
 function colorize(str, color) {
     var color_code = (function () {
         switch (color) {
@@ -117,7 +109,6 @@ exports.colorize = colorize;
  */
 function execSync(cmd, options) {
     traceCmdIfEnabled(cmd, options);
-    fetch_id(options);
     return child_process.execSync(cmd, __assign({}, (options || {}), { "encoding": "utf8" }));
 }
 exports.execSync = execSync;
@@ -132,7 +123,6 @@ exports.execSync = execSync;
  */
 function execSyncTrace(cmd, options) {
     traceCmdIfEnabled(cmd, options);
-    fetch_id(options);
     child_process.execSync(cmd, __assign({}, (options || {}), { "stdio": "inherit" }));
 }
 exports.execSyncTrace = execSyncTrace;
@@ -174,7 +164,6 @@ function exec(cmd, options) {
     traceCmdIfEnabled(cmd, options);
     return new Promise(function (resolve, reject) { return __awaiter(_this, void 0, void 0, function () {
         return __generator(this, function (_a) {
-            fetch_id(options);
             child_process.exec(cmd, __assign({}, (options || {}), { "encoding": "utf8" }), function (error, stdout, stderr) {
                 if (!!error) {
                     error["stderr"] = stderr;
@@ -678,3 +667,143 @@ function sh_if(cmd) {
     return true;
 }
 exports.sh_if = sh_if;
+/**
+ *
+ * Allow to schedule action to perform before exiting.
+ *
+ * The action handler will always be called before the process stop
+ * unless process.exit is explicitly called or if the process receive any signal other
+ * than the ones specified in the ExitCause.Signal["signal"] type.
+ *
+ * The process may stop for tree reasons:
+ * 1) If there is no more work scheduled.
+ * 2) If an uncaught exception it thrown ( or a unhandled promise rejection )
+ * 3) If a signal ( one of the supported )is sent to the process.
+ *
+ * To manually exit the process there is two option:
+ * - Call process.exit() but action handler will never be called.
+ * - Emit "beforeExit" on process object ( process.emit("beforeExit, NaN);
+ * Doing so you simulate stop condition N1.
+ *
+ * To define the return code set process.exitCode. The exit code can be set
+ * before emitting "beforeExit" or in the action handler.
+ *
+ * action can be synchronous or asynchronous.
+ * the action handler has [timeout] ms to complete.
+ * If it has not completed within this delay the process will
+ * be terminated anyway.
+ *
+ * Any uncaught exception thrown outside of the action handler
+ * while the action handler is running will be ignored.
+ *
+ * Whether the action handler complete by successfully or throw
+ * an exception the process will terminate with exit code set
+ * in process.exitCode at the time of the completion.
+ *
+ * (optional) if exitOnCause(exitCause) return false the action handler
+ * will not be called and the the process will continue as
+ * if nothing happened.
+ *
+ *
+ */
+function setExitHandler(action, timeout, exitOnCause) {
+    var _this = this;
+    if (timeout === void 0) { timeout = 4000; }
+    if (exitOnCause === void 0) { exitOnCause = function () { return true; }; }
+    var e_2, _a, e_3, _b;
+    var log = function () {
+        var args = [];
+        for (var _i = 0; _i < arguments.length; _i++) {
+            args[_i] = arguments[_i];
+        }
+        return setExitHandler.log.apply(setExitHandler, args);
+    };
+    var handler = function (exitCause) { return __awaiter(_this, void 0, void 0, function () {
+        var actionOut, _a;
+        return __generator(this, function (_b) {
+            switch (_b.label) {
+                case 0:
+                    if (exitCause.type !== "NOTHING ELSE TO DO" && !exitOnCause(exitCause)) {
+                        log("===prevent exit on cause===", exitCause);
+                        return [2 /*return*/];
+                    }
+                    log("===exit cause===", exitCause);
+                    handler = function (exitCause) {
+                        log("===ignored extra exit cause===", exitCause);
+                        setTimeout(function () { }, 1000000);
+                    };
+                    setTimeout(function () {
+                        log("===action handler timeout===");
+                        process.exit();
+                    }, timeout);
+                    try {
+                        actionOut = action(exitCause);
+                    }
+                    catch (_c) {
+                        log("===action handler throw===");
+                        process.exit();
+                        return [2 /*return*/];
+                    }
+                    if (!(actionOut instanceof Promise)) return [3 /*break*/, 4];
+                    _b.label = 1;
+                case 1:
+                    _b.trys.push([1, 3, , 4]);
+                    return [4 /*yield*/, actionOut];
+                case 2:
+                    _b.sent();
+                    return [3 /*break*/, 4];
+                case 3:
+                    _a = _b.sent();
+                    log("===action handler reject====");
+                    process.exit();
+                    return [2 /*return*/];
+                case 4:
+                    log("=====action handler complete success===");
+                    process.exit();
+                    return [2 /*return*/];
+            }
+        });
+    }); };
+    var _loop_1 = function (signal) {
+        process.on(signal, function () { return handler({ "type": "SIGNAL", signal: signal }); });
+    };
+    try {
+        for (var _c = __values(setExitHandler.ExitCause.Signal.list), _d = _c.next(); !_d.done; _d = _c.next()) {
+            var signal = _d.value;
+            _loop_1(signal);
+        }
+    }
+    catch (e_2_1) { e_2 = { error: e_2_1 }; }
+    finally {
+        try {
+            if (_d && !_d.done && (_a = _c.return)) _a.call(_c);
+        }
+        finally { if (e_2) throw e_2.error; }
+    }
+    try {
+        for (var _e = __values(["uncaughtException", "unhandledRejection"]), _f = _e.next(); !_f.done; _f = _e.next()) {
+            var eventName = _f.value;
+            process.on(eventName, function (error) { return handler({ "type": "EXCEPTION", error: error }); });
+        }
+    }
+    catch (e_3_1) { e_3 = { error: e_3_1 }; }
+    finally {
+        try {
+            if (_f && !_f.done && (_b = _e.return)) _b.call(_e);
+        }
+        finally { if (e_3) throw e_3.error; }
+    }
+    process.on("beforeExit", function () { return handler({ "type": "NOTHING ELSE TO DO" }); });
+}
+exports.setExitHandler = setExitHandler;
+(function (setExitHandler) {
+    var ExitCause;
+    (function (ExitCause) {
+        var Signal;
+        (function (Signal) {
+            Signal._obj = { "SIGINT": null, "SIGUSR2": null };
+            Signal.list = Object.keys(Signal._obj);
+        })(Signal = ExitCause.Signal || (ExitCause.Signal = {}));
+    })(ExitCause = setExitHandler.ExitCause || (setExitHandler.ExitCause = {}));
+    setExitHandler.log = function () { };
+})(setExitHandler = exports.setExitHandler || (exports.setExitHandler = {}));

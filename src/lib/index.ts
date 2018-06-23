@@ -29,31 +29,15 @@ namespace traceCmdIfEnabled {
     export let enabled = false;
 }
 
-function fetch_id(options: any) {
 
-    if( !options ){ 
-        return;
-    }
-
-    if (!!options.unix_user) {
-
-        const unix_user = options.unix_user;
-
-        delete options.unix_user;
-
-        const get_id = (type: "u" | "g") =>
-            parseInt(
-                child_process.execSync(`id -${type} ${unix_user}`)
-                    .toString("utf8")
-                    .slice(0, -1)
-            );
-
-        options.uid = get_id("u");
-        options.gid = get_id("g");
-
-    }
-
+export function get_uid(unix_user: string){
+    return parseInt(sh_eval(`id -u ${unix_user}`));
 }
+
+export function get_gid(unix_user: string){
+    return parseInt(sh_eval(`id -g ${unix_user}`));
+}
+
 
 export function colorize(str: string, color: "GREEN" | "RED" | "YELLOW"): string {
 
@@ -85,14 +69,12 @@ export function colorize(str: string, color: "GREEN" | "RED" | "YELLOW"): string
  */
 export function execSync(
     cmd: string,
-    options?: child_process.ExecSyncOptions & { unix_user?: string },
+    options?: child_process.ExecSyncOptions,
 ): string {
 
     traceCmdIfEnabled(cmd, options);
 
-    fetch_id(options);
-
-    return child_process.execSync(cmd, { ...(options as any || {}), "encoding": "utf8" });
+    return child_process.execSync(cmd, { ...(options || {}), "encoding": "utf8" });
 
 }
 
@@ -107,14 +89,12 @@ export function execSync(
  */
 export function execSyncTrace(
     cmd: string, 
-    options?: child_process.ExecSyncOptions & { unix_user?: string },
+    options?: child_process.ExecSyncOptions,
 ): void {
 
     traceCmdIfEnabled(cmd, options);
 
-    fetch_id(options);
-
-    child_process.execSync(cmd, { ...(options as any || {}), "stdio": "inherit" });
+    child_process.execSync(cmd, { ...(options || {}), "stdio": "inherit" });
 
 }
 
@@ -156,10 +136,10 @@ const execSyncNoCmdTrace: typeof execSync = (...args)=> {
  */
 export function execSyncQuiet(
     cmd: string,
-    options?: child_process.ExecSyncOptions & { unix_user?: string },
+    options?: child_process.ExecSyncOptions,
 ): string{
 
-    return execSync(cmd, { ...(options as any || {}), "stdio": "pipe" });
+    return execSync(cmd, { ...(options || {}), "stdio": "pipe" });
 
 }
 
@@ -167,7 +147,7 @@ export function execSyncQuiet(
 /** Same as execSync but async */
 export function exec(
     cmd: string,
-    options?: child_process.ExecOptions & { unix_user?: string }
+    options?: child_process.ExecOptions
 ): Promise<string> {
 
     traceCmdIfEnabled(cmd, options);
@@ -175,11 +155,9 @@ export function exec(
     return new Promise(
         async (resolve, reject) => {
 
-            fetch_id(options);
-
             child_process.exec(
                 cmd,
-                { ...(options as any || {}), "encoding": "utf8" },
+                { ...(options || {}), "encoding": "utf8" },
                 (error, stdout, stderr) => {
 
                     if (!!error) {
@@ -856,6 +834,163 @@ export function sh_if(cmd: string): boolean {
     }
 
     return true;
+
+}
+
+
+/**
+ * 
+ * Allow to schedule action to perform before exiting.
+ * 
+ * The action handler will always be called before the process stop
+ * unless process.exit is explicitly called or if the process receive any signal other 
+ * than the ones specified in the ExitCause.Signal["signal"] type.
+ * 
+ * The process may stop for tree reasons: 
+ * 1) If there is no more work scheduled.
+ * 2) If an uncaught exception it thrown ( or a unhandled promise rejection )
+ * 3) If a signal ( one of the supported )is sent to the process.
+ * 
+ * To manually exit the process there is two option:
+ * - Call process.exit() but action handler will never be called.
+ * - Emit "beforeExit" on process object ( process.emit("beforeExit, NaN);
+ * Doing so you simulate stop condition N1.
+ * 
+ * To define the return code set process.exitCode. The exit code can be set
+ * before emitting "beforeExit" or in the action handler.
+ * 
+ * action can be synchronous or asynchronous.
+ * the action handler has [timeout] ms to complete.
+ * If it has not completed within this delay the process will
+ * be terminated anyway.
+ * 
+ * Any uncaught exception thrown outside of the action handler
+ * while the action handler is running will be ignored.
+ *
+ * Whether the action handler complete by successfully or throw
+ * an exception the process will terminate with exit code set 
+ * in process.exitCode at the time of the completion.
+ * 
+ * (optional) if exitOnCause(exitCause) return false the action handler
+ * will not be called and the the process will continue as
+ * if nothing happened.
+ * 
+ *
+ */
+export function setExitHandler(
+    action: (exitCause: setExitHandler.ExitCause) => any,
+    timeout = 4000,
+    exitOnCause: (exitCause: Exclude<setExitHandler.ExitCause,setExitHandler.ExitCause.NothingElseToDo>)=> boolean= ()=> true
+) {
+
+    const log: typeof setExitHandler.log= (...args)=> setExitHandler.log.apply(setExitHandler, args);
+
+    let handler: (exitCause: setExitHandler.ExitCause) => any = async exitCause => {
+
+        if (exitCause.type !== "NOTHING ELSE TO DO" && !exitOnCause(exitCause)) {
+
+            log("===prevent exit on cause===", exitCause);
+
+            return;
+
+        }
+
+        log("===exit cause===", exitCause);
+
+        handler = exitCause => {
+            log("===ignored extra exit cause===", exitCause);
+            setTimeout(() => { }, 1000000);
+        };
+
+        setTimeout(() => {
+            log("===action handler timeout===");
+            process.exit();
+        }, timeout);
+
+        let actionOut: any;
+
+        try {
+
+            actionOut = action(exitCause);
+
+        } catch{
+
+            log("===action handler throw===");
+            process.exit();
+            return;
+
+        }
+
+        if (actionOut instanceof Promise) {
+
+            try {
+
+                await actionOut;
+
+            } catch{
+
+                log("===action handler reject====");
+
+                process.exit();
+                return;
+            }
+
+        }
+
+        log("=====action handler complete success===");
+
+        process.exit();
+
+    };
+
+    for (const signal of setExitHandler.ExitCause.Signal.list) {
+
+        process.on(signal, () => handler({ "type": "SIGNAL", signal }));
+
+    }
+
+
+    for (const eventName of ["uncaughtException", "unhandledRejection"]) {
+
+        process.on(eventName as any, (error: Error) => handler({ "type": "EXCEPTION", error }));
+
+    }
+
+    process.on("beforeExit", () => handler({ "type": "NOTHING ELSE TO DO" }));
+
+}
+
+export namespace setExitHandler {
+
+    export type ExitCause = ExitCause.Signal | ExitCause.Exception | ExitCause.NothingElseToDo;
+
+    export namespace ExitCause {
+
+        export type Signal = {
+            type: "SIGNAL";
+            signal: keyof typeof Signal._obj;
+        };
+
+        export namespace Signal {
+
+            export const _obj = { "SIGINT": null, "SIGUSR2": null };
+
+            export const list: Signal["signal"][] = Object.keys(_obj) as any;
+
+        }
+
+        export type Exception = {
+            type: "EXCEPTION",
+            error: Error
+        };
+
+        export type NothingElseToDo = {
+            type: "NOTHING ELSE TO DO"
+        };
+
+    }
+
+    export let log: typeof console.log = () => { };
 
 }
 
