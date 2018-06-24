@@ -173,7 +173,8 @@ export function exec(
                     }
 
 
-                });
+                }
+            );
 
         }
     );
@@ -843,29 +844,35 @@ export function sh_if(cmd: string): boolean {
  * Allow to schedule action to perform before exiting.
  * 
  * The action handler will always be called before the process stop
- * unless process.exit is explicitly called or if the process receive any signal other 
- * than the ones specified in the ExitCause.Signal["signal"] type.
+ * unless process.exit is explicitly called somewhere or 
+ * if the process receive any signal other * than the ones specified 
+ * in the ExitCause.Signal["signal"] type.
  * 
  * The process may stop for tree reasons: 
- * 1) If there is no more work scheduled.
+ * 1) If there is no more work scheduled ( natural termination ).
  * 2) If an uncaught exception it thrown ( or a unhandled promise rejection )
- * 3) If a signal ( one of the supported )is sent to the process.
+ * 3) If a signal ( one of the handled ) is sent to the process.
  * 
  * To manually exit the process there is two option:
- * - Call process.exit() but action handler will never be called.
- * - Emit "beforeExit" on process object ( process.emit("beforeExit, NaN);
- * Doing so you simulate stop condition N1.
+ * - Call process.exit(X) but action handler will not be called.
+ * - Emit "beforeExit" on process object ( process.emit("beforeExit, process.exitCode= X) );
+ *  Doing so you simulate 1st stop condition ( natural termination ).
  * 
  * To define the return code set process.exitCode. The exit code can be set
  * before emitting "beforeExit" or in the action handler.
+ * If exitCode has not be defined the process 1 ( error ) will be used.
  * 
- * action can be synchronous or asynchronous.
- * the action handler has [timeout] ms to complete.
+ * The action handler can be synchronous or asynchronous.
+ * The action handler has [timeout] ms to complete.
  * If it has not completed within this delay the process will
  * be terminated anyway.
+ * WARNING: It is important not to perform sync operation that can 
+ * hang for a long time in the action handler ( e.g. execSync("sleep 1000"); ) 
+ * because while the sync operation are performed the timeout can't be triggered.
  * 
- * Any uncaught exception thrown outside of the action handler
- * while the action handler is running will be ignored.
+ * As soon as the action handler is called all the other exitCause that 
+ * may auccur will be ignored so that the action handler have time to complete.
+ * Anyway the action handler is called only once.
  *
  * Whether the action handler complete by successfully or throw
  * an exception the process will terminate with exit code set 
@@ -874,7 +881,6 @@ export function sh_if(cmd: string): boolean {
  * (optional) if exitOnCause(exitCause) return false the action handler
  * will not be called and the the process will continue as
  * if nothing happened.
- * 
  *
  */
 export function setExitHandler(
@@ -895,16 +901,21 @@ export function setExitHandler(
 
         }
 
-        log("===exit cause===", exitCause);
-
         handler = exitCause => {
             log("===ignored extra exit cause===", exitCause);
             setTimeout(() => { }, 1000000);
         };
 
+        const process_exit = () => process.exit(
+            typeof process.exitCode === "number" && !isNaN(process.exitCode)
+                ? undefined : 1
+        );
+
+        log("===exit cause===", exitCause);
+
         setTimeout(() => {
             log("===action handler timeout===");
-            process.exit();
+            process_exit();
         }, timeout);
 
         let actionOut: any;
@@ -916,7 +927,7 @@ export function setExitHandler(
         } catch{
 
             log("===action handler throw===");
-            process.exit();
+            process_exit();
             return;
 
         }
@@ -931,15 +942,15 @@ export function setExitHandler(
 
                 log("===action handler reject====");
 
-                process.exit();
+                process_exit();
                 return;
             }
 
         }
 
-        log("=====action handler complete success===");
+        log("===action handler complete success===");
 
-        process.exit();
+        process_exit();
 
     };
 
@@ -962,7 +973,11 @@ export function setExitHandler(
 
 export namespace setExitHandler {
 
-    export type ExitCause = ExitCause.Signal | ExitCause.Exception | ExitCause.NothingElseToDo;
+    export type ExitCause =
+        ExitCause.Signal |
+        ExitCause.Exception |
+        ExitCause.NothingElseToDo
+        ;
 
     export namespace ExitCause {
 
@@ -973,7 +988,7 @@ export namespace setExitHandler {
 
         export namespace Signal {
 
-            export const _obj = { "SIGINT": null, "SIGUSR2": null };
+            export const _obj = { "SIGINT": null, "SIGUSR2": null, "SIGHUP": null };
 
             export const list: Signal["signal"][] = Object.keys(_obj) as any;
 
@@ -993,7 +1008,3 @@ export namespace setExitHandler {
     export let log: typeof console.log = () => { };
 
 }
-
-
-
-

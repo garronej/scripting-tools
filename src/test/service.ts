@@ -19,8 +19,8 @@ import * as fs from "fs";
  * 
  */
 
-
 const unix_user = "pi";
+const stop_timeout= 5000;
 
 switch (os.userInfo().username) {
     case "root": parentProcessMain(); break;
@@ -48,9 +48,9 @@ function parentProcessMain() {
 
         console.log(`(parent) exiting with child process exit code: ${process.exitCode}`);
 
-    });
+    }, stop_timeout);
 
-    //scriptLib.setExitHandler.log= console.log.bind(console);
+    scriptLib.setExitHandler.log= console.log.bind(console);
 
     let gracefullyTerminateChildProcess: () => Promise<number>;
 
@@ -58,7 +58,7 @@ function parentProcessMain() {
 
         gracefullyTerminateChildProcess = () => Promise.resolve(0);
 
-        console.log("(parent) Starting child process...we do stuffs ar root before...");
+        console.log("(parent) Starting child process...we do stuffs as root before...");
 
         await new Promise(resolve => setTimeout(resolve, 3000));
 
@@ -82,11 +82,31 @@ function parentProcessMain() {
 
         gracefullyTerminateChildProcess = () => new Promise<number>(resolve => {
 
+            console.log("(parent) in gracefullyTerminateChildProcess");
+
             childProcess.send(null);
 
             childProcess.removeAllListeners("close");
 
-            childProcess.once("close", code => resolve(code));
+            const timer = setTimeout(() => { 
+
+                console.log("(parent) child process not responding, force kill...");
+
+                childProcess.kill("SIGKILL") 
+
+            }, (9/10)*stop_timeout );
+
+            childProcess.once("close", (code: number | null ) => {
+
+                if( typeof code !== "number" || isNaN(code) ){
+                    code = 1;
+                }
+
+                console.log("(parent) child process close code: " + code);
+                clearTimeout(timer);
+                resolve(code);
+
+            });
 
         });
 
@@ -96,8 +116,6 @@ function parentProcessMain() {
 }
 
 async function childProcessMain() {
-
-    console.log("PID: " + process.pid);
 
     //Here load launch from lib.
     const util = await import("util");
@@ -115,35 +133,58 @@ async function childProcessMain() {
 
         fs.appendFileSync(logfile_path, message);
 
+
     };
 
+    log("PID: " + process.pid);
 
     process.on("message", () => {
 
-        log("exit gracefully");
+        log("received parent's message => terminate gracefully");
 
-        process.emit("beforeExit", process.exitCode= 0);
+        process.emit("beforeExit", process.exitCode = 0);
 
     });
 
+    process.once("disconnect", () => process.exit(1));
 
-    scriptLib.setExitHandler(async ()=>{
+    scriptLib.setExitHandler(
+        async () => {
 
-        log("do some async stuffs before closing");
-        await new Promise(resolve => setTimeout(resolve, 3000));
-        log(`exiting with code ${process.exitCode}`);
+            log("do some async stuffs before closing");
+            await new Promise(resolve => setTimeout(resolve, 3000));
+            log(`exiting with code ${process.exitCode}`);
 
-    }, undefined, exitCause=> exitCause.type !== "SIGNAL" );
+        },
+        (8/10) * stop_timeout,
+        exitCause => exitCause.type !== "SIGNAL"
+    );
 
     //scriptLib.setExitHandler.log= log;
 
-    (async () => {
+    (async function launch() {
 
         while (true) {
 
             log(`performing actual job ${process.pid}...`);
 
             await new Promise(resolve => setTimeout(resolve, 1000));
+
+            /*
+            log(`Attempt to block the thread`);
+
+            for (let i = 0; i < 99999; i++) {
+                for (let j = 0; j < 99999; j++) {
+                    for (let k = 0; k < 99999; k++) {
+                        for (let l = 0; l < 99999; l++) {
+                            (new Array(10000)).fill(NaN).map(() => Math.random());
+                        }
+                    }
+                }
+            }
+
+            log(`process released`);
+            */
 
         }
 
