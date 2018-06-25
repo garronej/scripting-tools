@@ -16,6 +16,34 @@ import * as fs from "fs";
  * 
  * If the root process exit the child process start gracefully.
  * 
+ * 
+ * 
+ * 
+ */
+
+ /*
+
+ System.d config file sample:
+
+ fs.writeFileSync(
+     path.join("/etc/systemd/system", `${srv_name}.service`),
+     Buffer.from([
+         `[Unit]`,
+         `Description=${srv_name} service.`,
+         `After=network.target`,
+         ``,
+         `[Service]`,
+         `ExecStart=${node_path} ${path.join(__dirname, "main.js")}`,
+         `StandardOutput=inherit`,
+         `KillSignal=SIGUSR2`,
+         `SendSIGKILL=no`,
+         ``,
+         `[Install]`,
+         `WantedBy=multi-user.target`,
+         ``
+     ].join("\n"), "utf8")
+ );
+
  */
 
 const stop_timeout= 5000;
@@ -139,7 +167,7 @@ async function childProcessMain() {
     const log: typeof console.log = (...args)=> {
 
         const message = Buffer.from(
-            util.format.apply(util, args) + "\n",
+            scriptLib.colorize(util.format.apply(util, args), "YELLOW") + "\n",
             "utf8"
         );
 
