@@ -192,9 +192,9 @@ export declare function sh_eval(cmd: string): string;
 export declare function sh_if(cmd: string): boolean;
 /**
  *
- * Allow to schedule action to perform before exiting.
+ * Allow to schedule action function to perform before exiting.
  *
- * The action handler will always be called before the process stop
+ * The action function will always be called before the process stop
  * unless process.exit is explicitly called somewhere or
  * if the process receive any signal other * than the ones specified
  * in the ExitCause.Signal["signal"] type.
@@ -205,31 +205,31 @@ export declare function sh_if(cmd: string): boolean;
  * 3) If a signal ( one of the handled ) is sent to the process.
  *
  * To manually exit the process there is two option:
- * - Call process.exit(X) but action handler will not be called.
+ * - Call process.exit(X) but action function will not be called.
  * - Emit "beforeExit" on process object ( process.emit("beforeExit, process.exitCode= X) );
  *  Doing so you simulate 1st stop condition ( natural termination ).
  *
  * To define the return code set process.exitCode. The exit code can be set
- * before emitting "beforeExit" or in the action handler.
+ * before emitting "beforeExit" or in the action function.
  * If exitCode has not be defined the process 1 ( error ) will be used.
  *
- * The action handler can be synchronous or asynchronous.
- * The action handler has [timeout] ms to complete.
+ * The action function can be synchronous or asynchronous.
+ * The action function has [timeout] ms to complete.
  * If it has not completed within this delay the process will
  * be terminated anyway.
  * WARNING: It is important not to perform sync operation that can
- * hang for a long time in the action handler ( e.g. execSync("sleep 1000"); )
+ * hang for a long time in the action function ( e.g. execSync("sleep 1000"); )
  * because while the sync operation are performed the timeout can't be triggered.
  *
- * As soon as the action handler is called all the other exitCause that
- * may auccur will be ignored so that the action handler have time to complete.
- * Anyway the action handler is called only once.
+ * As soon as the action function is called all the other exitCause that
+ * may auccur will be ignored so that the action function have time to complete.
+ * Anyway the action function is called only once.
  *
- * Whether the action handler complete by successfully or throw
+ * Whether the action function complete by successfully or throw
  * an exception the process will terminate with exit code set
  * in process.exitCode at the time of the completion.
  *
- * (optional) if exitOnCause(exitCause) return false the action handler
+ * (optional) if exitOnCause(exitCause) return false the action function
  * will not be called and the the process will continue as
  * if nothing happened.
  *
@@ -258,5 +258,31 @@ export declare namespace setExitHandler {
             type: "NOTHING ELSE TO DO";
         };
     }
+    let log: typeof console.log;
+}
+/**
+ *
+ * Stop a process by sending a specific signal.
+ * Assume that the given signal is supposed to be deadly for the process.
+ * The process is identified by a pid stored in pidfile.
+ *
+ * If the pidfile exist but the process identified by pid does not
+ * then the pidfile is suppressed. ( Assume write access on pidfile )
+ *
+ * The function will hang until the process stop.
+ *
+ */
+export declare function stopProcessSync(pidfile_path: string, signal?: NodeJS.Signals): void;
+export declare namespace stopProcessSync {
+    /**
+     * Shell command to so send a pid signal to a process
+     * Suitable for for systemd ExecStop=
+     * */
+    function buildSendSignalCmd(pidfile_path: string, signal: NodeJS.Signals): string;
+    /**
+     * NOTE: Remove pidfile if process does not exist.
+     * Assume user have rw access wright one the pidfile.
+     * */
+    function isRunning(pidfile_path: string): boolean;
     let log: typeof console.log;
 }

@@ -1,7 +1,6 @@
 import * as scriptLib from "../lib";
 import * as child_process from "child_process";
 import * as path from "path";
-import * as os from "os";
 import * as fs from "fs";
 
 /**
@@ -19,22 +18,37 @@ import * as fs from "fs";
  * 
  */
 
-const unix_user = "pi";
 const stop_timeout= 5000;
 
-switch (os.userInfo().username) {
-    case "root": parentProcessMain(); break;
-    case unix_user: childProcessMain(); break;
-    default: throw new Error("Need root access")
+if( process.getuid() === 0 ){
+
+    parentProcessMain();
+
+}else if( !!process.send ){
+
+    childProcessMain();
+
+}else{
+
+    throw new Error("Should be exec as root");
+
 }
 
 function parentProcessMain() {
 
-    console.log("(parent) PID: " + process.pid);
-
     const pidfile_path = path.join(__dirname, "pid");
 
+    scriptLib.stopProcessSync.log= console.log.bind(console);
+
+    scriptLib.stopProcessSync(pidfile_path, "SIGUSR2");
+
+    if( fs.existsSync(pidfile_path) ){
+        throw Error("Other instance launched simultaneously");
+    }
+
     fs.writeFileSync(pidfile_path, process.pid.toString());
+
+    console.log("(parent) PID: " + process.pid);
 
     scriptLib.setExitHandler(async exitCause=>{
 

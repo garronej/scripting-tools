@@ -4,6 +4,7 @@ import * as fs from "fs";
 import * as path from "path";
 import * as https from "https";
 import * as http from "http";
+import * as util from "util";
 
 /** 
  * After this function is called every call to execSync 
@@ -841,9 +842,9 @@ export function sh_if(cmd: string): boolean {
 
 /**
  * 
- * Allow to schedule action to perform before exiting.
+ * Allow to schedule action function to perform before exiting.
  * 
- * The action handler will always be called before the process stop
+ * The action function will always be called before the process stop
  * unless process.exit is explicitly called somewhere or 
  * if the process receive any signal other * than the ones specified 
  * in the ExitCause.Signal["signal"] type.
@@ -854,31 +855,31 @@ export function sh_if(cmd: string): boolean {
  * 3) If a signal ( one of the handled ) is sent to the process.
  * 
  * To manually exit the process there is two option:
- * - Call process.exit(X) but action handler will not be called.
+ * - Call process.exit(X) but action function will not be called.
  * - Emit "beforeExit" on process object ( process.emit("beforeExit, process.exitCode= X) );
  *  Doing so you simulate 1st stop condition ( natural termination ).
  * 
  * To define the return code set process.exitCode. The exit code can be set
- * before emitting "beforeExit" or in the action handler.
+ * before emitting "beforeExit" or in the action function.
  * If exitCode has not be defined the process 1 ( error ) will be used.
  * 
- * The action handler can be synchronous or asynchronous.
- * The action handler has [timeout] ms to complete.
+ * The action function can be synchronous or asynchronous.
+ * The action function has [timeout] ms to complete.
  * If it has not completed within this delay the process will
  * be terminated anyway.
  * WARNING: It is important not to perform sync operation that can 
- * hang for a long time in the action handler ( e.g. execSync("sleep 1000"); ) 
+ * hang for a long time in the action function ( e.g. execSync("sleep 1000"); ) 
  * because while the sync operation are performed the timeout can't be triggered.
  * 
- * As soon as the action handler is called all the other exitCause that 
- * may auccur will be ignored so that the action handler have time to complete.
- * Anyway the action handler is called only once.
+ * As soon as the action function is called all the other exitCause that 
+ * may auccur will be ignored so that the action function have time to complete.
+ * Anyway the action function is called only once.
  *
- * Whether the action handler complete by successfully or throw
+ * Whether the action function complete by successfully or throw
  * an exception the process will terminate with exit code set 
  * in process.exitCode at the time of the completion.
  * 
- * (optional) if exitOnCause(exitCause) return false the action handler
+ * (optional) if exitOnCause(exitCause) return false the action function
  * will not be called and the the process will continue as
  * if nothing happened.
  *
@@ -889,20 +890,22 @@ export function setExitHandler(
     exitOnCause: (exitCause: Exclude<setExitHandler.ExitCause,setExitHandler.ExitCause.NothingElseToDo>)=> boolean= ()=> true
 ) {
 
-    const log: typeof setExitHandler.log= (...args)=> setExitHandler.log.apply(setExitHandler, args);
+    const log: typeof setExitHandler.log= (...args)=> setExitHandler.log(
+        `===exitHandler=== ${util.format.apply(util, args)}`
+    );
 
     let handler: (exitCause: setExitHandler.ExitCause) => any = async exitCause => {
 
         if (exitCause.type !== "NOTHING ELSE TO DO" && !exitOnCause(exitCause)) {
 
-            log("===prevent exit on cause===", exitCause);
+            log("prevent exit on cause", exitCause);
 
             return;
 
         }
 
         handler = exitCause => {
-            log("===ignored extra exit cause===", exitCause);
+            log("ignored extra exit cause", exitCause);
             setTimeout(() => { }, 1000000);
         };
 
@@ -911,10 +914,10 @@ export function setExitHandler(
                 ? undefined : 1
         );
 
-        log("===exit cause===", exitCause);
+        log("exit cause", exitCause);
 
         setTimeout(() => {
-            log("===action handler timeout===");
+            log("action function timeout");
             process_exit();
         }, timeout);
 
@@ -924,9 +927,9 @@ export function setExitHandler(
 
             actionOut = action(exitCause);
 
-        } catch{
+        } catch(error){
 
-            log("===action handler throw===");
+            log("action function thrown", error);
             process_exit();
             return;
 
@@ -938,17 +941,18 @@ export function setExitHandler(
 
                 await actionOut;
 
-            } catch{
+            } catch(error){
 
-                log("===action handler reject====");
+                log("action function rejected", error);
 
                 process_exit();
                 return;
+
             }
 
         }
 
-        log("===action handler complete success===");
+        log("action function complete success");
 
         process_exit();
 
@@ -1008,3 +1012,93 @@ export namespace setExitHandler {
     export let log: typeof console.log = () => { };
 
 }
+
+/**
+ * 
+ * Stop a process by sending a specific signal.
+ * Assume that the given signal is supposed to be deadly for the process.
+ * The process is identified by a pid stored in pidfile.
+ * 
+ * If the pidfile exist but the process identified by pid does not
+ * then the pidfile is suppressed. ( Assume write access on pidfile )
+ * 
+ * The function will hang until the process stop.
+ * 
+ */
+export function stopProcessSync(
+    pidfile_path: string,
+    signal: NodeJS.Signals = "SIGUSR2"
+) {
+
+    const log: typeof setExitHandler.log = (...args) => stopProcessSync.log(
+        `===stopProcessSync=== ${util.format.apply(util,args)}`
+    );
+
+    if (!stopProcessSync.isRunning(pidfile_path)) {
+        log("not running");
+        return;
+    }
+
+    log(`sending signal ${signal}`);
+
+    execSyncNoCmdTrace(
+        stopProcessSync.buildSendSignalCmd(pidfile_path, signal),
+        { "stdio": "pipe" }
+    );
+
+    while (stopProcessSync.isRunning(pidfile_path)) {
+        log("waiting until process terminate...");
+        execSyncNoCmdTrace("sleep 0.5", { "stdio": "pipe" });
+    }
+
+    log("process terminated");
+
+}
+
+export namespace stopProcessSync {
+
+
+    /** 
+     * Shell command to so send a pid signal to a process 
+     * Suitable for for systemd ExecStop=
+     * */
+    export function buildSendSignalCmd(
+        pidfile_path: string,
+        signal: NodeJS.Signals
+    ) {
+        return [
+            sh_eval("which pkill"),
+            `--pidfile ${pidfile_path}`,
+            `-${signal}`
+        ].join(" ");
+    }
+
+    /** 
+     * NOTE: Remove pidfile if process does not exist.
+     * Assume user have rw access wright one the pidfile.
+     * */
+    export function isRunning(
+        pidfile_path: string
+    ): boolean {
+
+        if (!fs.existsSync(pidfile_path)) {
+            return false;
+        }
+
+        const pid = parseInt(fs.readFileSync(pidfile_path).toString("utf8").replace(/\n$/, ""));
+
+        const doesProcessExist = sh_if(`kill -0 ${pid}`)
+
+        if (!doesProcessExist && fs.existsSync(pidfile_path)) {
+            fs.unlinkSync(pidfile_path);
+        }
+
+        return doesProcessExist;
+
+    }
+
+    export let log: typeof console.log = () => { };
+
+}
+
+

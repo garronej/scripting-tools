@@ -59,6 +59,7 @@ var fs = require("fs");
 var path = require("path");
 var https = require("https");
 var http = require("http");
+var util = require("util");
 /**
  * After this function is called every call to execSync
  * or exec will print the unix commands being executed.
@@ -669,9 +670,9 @@ function sh_if(cmd) {
 exports.sh_if = sh_if;
 /**
  *
- * Allow to schedule action to perform before exiting.
+ * Allow to schedule action function to perform before exiting.
  *
- * The action handler will always be called before the process stop
+ * The action function will always be called before the process stop
  * unless process.exit is explicitly called somewhere or
  * if the process receive any signal other * than the ones specified
  * in the ExitCause.Signal["signal"] type.
@@ -682,31 +683,31 @@ exports.sh_if = sh_if;
  * 3) If a signal ( one of the handled ) is sent to the process.
  *
  * To manually exit the process there is two option:
- * - Call process.exit(X) but action handler will not be called.
+ * - Call process.exit(X) but action function will not be called.
  * - Emit "beforeExit" on process object ( process.emit("beforeExit, process.exitCode= X) );
  *  Doing so you simulate 1st stop condition ( natural termination ).
  *
  * To define the return code set process.exitCode. The exit code can be set
- * before emitting "beforeExit" or in the action handler.
+ * before emitting "beforeExit" or in the action function.
  * If exitCode has not be defined the process 1 ( error ) will be used.
  *
- * The action handler can be synchronous or asynchronous.
- * The action handler has [timeout] ms to complete.
+ * The action function can be synchronous or asynchronous.
+ * The action function has [timeout] ms to complete.
  * If it has not completed within this delay the process will
  * be terminated anyway.
  * WARNING: It is important not to perform sync operation that can
- * hang for a long time in the action handler ( e.g. execSync("sleep 1000"); )
+ * hang for a long time in the action function ( e.g. execSync("sleep 1000"); )
  * because while the sync operation are performed the timeout can't be triggered.
  *
- * As soon as the action handler is called all the other exitCause that
- * may auccur will be ignored so that the action handler have time to complete.
- * Anyway the action handler is called only once.
+ * As soon as the action function is called all the other exitCause that
+ * may auccur will be ignored so that the action function have time to complete.
+ * Anyway the action function is called only once.
  *
- * Whether the action handler complete by successfully or throw
+ * Whether the action function complete by successfully or throw
  * an exception the process will terminate with exit code set
  * in process.exitCode at the time of the completion.
  *
- * (optional) if exitOnCause(exitCause) return false the action handler
+ * (optional) if exitOnCause(exitCause) return false the action function
  * will not be called and the the process will continue as
  * if nothing happened.
  *
@@ -721,51 +722,51 @@ function setExitHandler(action, timeout, exitOnCause) {
         for (var _i = 0; _i < arguments.length; _i++) {
             args[_i] = arguments[_i];
         }
-        return setExitHandler.log.apply(setExitHandler, args);
+        return setExitHandler.log("===exitHandler=== " + util.format.apply(util, args));
     };
     var handler = function (exitCause) { return __awaiter(_this, void 0, void 0, function () {
-        var process_exit, actionOut, _a;
-        return __generator(this, function (_b) {
-            switch (_b.label) {
+        var process_exit, actionOut, error_4;
+        return __generator(this, function (_a) {
+            switch (_a.label) {
                 case 0:
                     if (exitCause.type !== "NOTHING ELSE TO DO" && !exitOnCause(exitCause)) {
-                        log("===prevent exit on cause===", exitCause);
+                        log("prevent exit on cause", exitCause);
                         return [2 /*return*/];
                     }
                     handler = function (exitCause) {
-                        log("===ignored extra exit cause===", exitCause);
+                        log("ignored extra exit cause", exitCause);
                         setTimeout(function () { }, 1000000);
                     };
                     process_exit = function () { return process.exit(typeof process.exitCode === "number" && !isNaN(process.exitCode)
                         ? undefined : 1); };
-                    log("===exit cause===", exitCause);
+                    log("exit cause", exitCause);
                     setTimeout(function () {
-                        log("===action handler timeout===");
+                        log("action function timeout");
                         process_exit();
                     }, timeout);
                     try {
                         actionOut = action(exitCause);
                     }
-                    catch (_c) {
-                        log("===action handler throw===");
+                    catch (error) {
+                        log("action function thrown", error);
                         process_exit();
                         return [2 /*return*/];
                     }
                     if (!(actionOut instanceof Promise)) return [3 /*break*/, 4];
-                    _b.label = 1;
+                    _a.label = 1;
                 case 1:
-                    _b.trys.push([1, 3, , 4]);
+                    _a.trys.push([1, 3, , 4]);
                     return [4 /*yield*/, actionOut];
                 case 2:
-                    _b.sent();
+                    _a.sent();
                     return [3 /*break*/, 4];
                 case 3:
-                    _a = _b.sent();
-                    log("===action handler reject====");
+                    error_4 = _a.sent();
+                    log("action function rejected", error_4);
                     process_exit();
                     return [2 /*return*/];
                 case 4:
-                    log("===action handler complete success===");
+                    log("action function complete success");
                     process_exit();
                     return [2 /*return*/];
             }
@@ -814,3 +815,68 @@ exports.setExitHandler = setExitHandler;
     })(ExitCause = setExitHandler.ExitCause || (setExitHandler.ExitCause = {}));
     setExitHandler.log = function () { };
 })(setExitHandler = exports.setExitHandler || (exports.setExitHandler = {}));
+/**
+ *
+ * Stop a process by sending a specific signal.
+ * Assume that the given signal is supposed to be deadly for the process.
+ * The process is identified by a pid stored in pidfile.
+ *
+ * If the pidfile exist but the process identified by pid does not
+ * then the pidfile is suppressed. ( Assume write access on pidfile )
+ *
+ * The function will hang until the process stop.
+ *
+ */
+function stopProcessSync(pidfile_path, signal) {
+    if (signal === void 0) { signal = "SIGUSR2"; }
+    var log = function () {
+        var args = [];
+        for (var _i = 0; _i < arguments.length; _i++) {
+            args[_i] = arguments[_i];
+        }
+        return stopProcessSync.log("===stopProcessSync=== " + util.format.apply(util, args));
+    };
+    if (!stopProcessSync.isRunning(pidfile_path)) {
+        log("not running");
+        return;
+    }
+    log("sending signal " + signal);
+    execSyncNoCmdTrace(stopProcessSync.buildSendSignalCmd(pidfile_path, signal), { "stdio": "pipe" });
+    while (stopProcessSync.isRunning(pidfile_path)) {
+        log("waiting until process terminate...");
+        execSyncNoCmdTrace("sleep 0.5", { "stdio": "pipe" });
+    }
+    log("process terminated");
+}
+exports.stopProcessSync = stopProcessSync;
+(function (stopProcessSync) {
+    /**
+     * Shell command to so send a pid signal to a process
+     * Suitable for for systemd ExecStop=
+     * */
+    function buildSendSignalCmd(pidfile_path, signal) {
+        return [
+            sh_eval("which pkill"),
+            "--pidfile " + pidfile_path,
+            "-" + signal
+        ].join(" ");
+    }
+    stopProcessSync.buildSendSignalCmd = buildSendSignalCmd;
+    /**
+     * NOTE: Remove pidfile if process does not exist.
+     * Assume user have rw access wright one the pidfile.
+     * */
+    function isRunning(pidfile_path) {
+        if (!fs.existsSync(pidfile_path)) {
+            return false;
+        }
+        var pid = parseInt(fs.readFileSync(pidfile_path).toString("utf8").replace(/\n$/, ""));
+        var doesProcessExist = sh_if("kill -0 " + pid);
+        if (!doesProcessExist && fs.existsSync(pidfile_path)) {
+            fs.unlinkSync(pidfile_path);
+        }
+        return doesProcessExist;
+    }
+    stopProcessSync.isRunning = isRunning;
+    stopProcessSync.log = function () { };
+})(stopProcessSync = exports.stopProcessSync || (exports.stopProcessSync = {}));
