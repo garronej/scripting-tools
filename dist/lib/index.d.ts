@@ -174,15 +174,15 @@ export declare function fs_ls(dir_path: string, mode?: "FILENAME" | "ABSOLUTE PA
 export declare function createSymlink(src_path: string, dst_path: string): void;
 /** Create a executable file */
 export declare function createScript(file_path: string, content: string): void;
+export { get_caller_file_path } from "./get_caller_file_path";
 /**
  *
- * Let's say this function is called from
- * f1 defined, if f1 is called by
- * a line of code file.ts this function
- * will return the path to file.ts.
+ * DO NOT USE TEST PURPOSE ONLY
+ *
+ * return __filename
  *
  */
-export declare function get_caller_file_path(): string;
+export declare function get__filename(): string;
 /**
  *
  * Equivalent to the pattern $() in bash.

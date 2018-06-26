@@ -633,33 +633,20 @@ function createScript(file_path, content) {
     execSyncNoCmdTrace("chmod +x " + file_path);
 }
 exports.createScript = createScript;
+var get_caller_file_path_1 = require("./get_caller_file_path");
+exports.get_caller_file_path = get_caller_file_path_1.get_caller_file_path;
+var get_caller_file_path_2 = require("./get_caller_file_path");
 /**
  *
- * Let's say this function is called from
- * f1 defined, if f1 is called by
- * a line of code file.ts this function
- * will return the path to file.ts.
+ * DO NOT USE TEST PURPOSE ONLY
+ *
+ * return __filename
  *
  */
-function get_caller_file_path() {
-    var originalFunc = Error.prepareStackTrace;
-    var callerFile;
-    try {
-        var error = new Error();
-        Error.prepareStackTrace = function (_, stack) { return stack; };
-        var currentFile = error.stack.shift().getFileName();
-        while (error.stack.length) {
-            callerFile = error.stack.shift().getFileName();
-            if (currentFile !== callerFile) {
-                break;
-            }
-        }
-    }
-    catch (_a) { }
-    Error.prepareStackTrace = originalFunc;
-    return callerFile;
+function get__filename() {
+    return get_caller_file_path_2.get_caller_file_path();
 }
-exports.get_caller_file_path = get_caller_file_path;
+exports.get__filename = get__filename;
 /**
  *
  * Equivalent to the pattern $() in bash.
@@ -1196,7 +1183,7 @@ function createService(params) {
         });
     }); };
     if (!process.send) {
-        main_root(get_caller_file_path());
+        main_root(get_caller_file_path_2.get_caller_file_path());
     }
     else {
         main_daemon();

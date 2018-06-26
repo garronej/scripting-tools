@@ -791,43 +791,18 @@ export function createScript(
 
 }
 
-/** 
+export { get_caller_file_path } from "./get_caller_file_path";
+import { get_caller_file_path } from "./get_caller_file_path";
+
+/**
  * 
- * Let's say this function is called from
- * f1 defined, if f1 is called by
- * a line of code file.ts this function
- * will return the path to file.ts.
+ * DO NOT USE TEST PURPOSE ONLY
+ * 
+ * return __filename
  * 
  */
-export function get_caller_file_path(): string {
-
-    const originalFunc = Error.prepareStackTrace;
-
-    let callerFile;
-
-    try {
-
-        const error: any = new Error();
-
-        Error.prepareStackTrace = (_, stack) => stack; 
-
-        let currentFile = error.stack.shift().getFileName();
-
-        while (error.stack.length) {
-
-            callerFile = error.stack.shift().getFileName();
-
-            if (currentFile !== callerFile) {
-                break;
-            }
-
-        }
-    } catch { }
-
-    Error.prepareStackTrace = originalFunc;
-
-    return callerFile;
-
+export function get__filename(): string {
+    return get_caller_file_path();
 }
 
 /**
@@ -929,10 +904,10 @@ export function sh_if(cmd: string): boolean {
 export function setProcessExitHandler(
     task: (exitCause: setProcessExitHandler.ExitCause) => any,
     timeout = 4000,
-    shouldExitIf: (exitCause: Exclude<setProcessExitHandler.ExitCause,setProcessExitHandler.ExitCause.NothingElseToDo>)=> boolean= ()=> true
+    shouldExitIf: (exitCause: Exclude<setProcessExitHandler.ExitCause, setProcessExitHandler.ExitCause.NothingElseToDo>) => boolean = () => true
 ) {
 
-    const log: typeof setProcessExitHandler.log= (...args)=> setProcessExitHandler.log(
+    const log: typeof setProcessExitHandler.log = (...args) => setProcessExitHandler.log(
         `===exitHandler=== ${util.format.apply(util, args)}`
     );
 
@@ -946,11 +921,11 @@ export function setProcessExitHandler(
 
         }
 
-        handler = exitCause => log("Ignored extra exit cause", exitCause) ;
+        handler = exitCause => log("Ignored extra exit cause", exitCause);
 
         const process_exit = () => {
 
-            if( typeof process.exitCode !== "number" || isNaN(process.exitCode) ){
+            if (typeof process.exitCode !== "number" || isNaN(process.exitCode)) {
 
                 process.exitCode = exitCause.type === "NOTHING ELSE TO DO" ? 0 : 1;
 
@@ -973,7 +948,7 @@ export function setProcessExitHandler(
 
             actionOut = task(exitCause);
 
-        } catch(error){
+        } catch (error) {
 
             log("Exit task thrown error", error);
             process_exit();
@@ -987,7 +962,7 @@ export function setProcessExitHandler(
 
                 await actionOut;
 
-            } catch(error){
+            } catch (error) {
 
                 log("Exit task returned a promise that rejected", error);
 
@@ -1077,7 +1052,7 @@ export function stopProcessSync(
 ) {
 
     const log: typeof setProcessExitHandler.log = (...args) => stopProcessSync.log(
-        `===stopProcessSync=== ${util.format.apply(util,args)}`
+        `===stopProcessSync=== ${util.format.apply(util, args)}`
     );
 
     log(`Called on pidfile ${pidfile_path}...`);
@@ -1094,13 +1069,13 @@ export function stopProcessSync(
         { "stdio": "pipe" }
     );
 
-    let isFirstCheck= true;
+    let isFirstCheck = true;
 
     while (stopProcessSync.isRunning(pidfile_path)) {
 
-        if( isFirstCheck ){
-            isFirstCheck= false;
-        }else{
+        if (isFirstCheck) {
+            isFirstCheck = false;
+        } else {
             log("Waiting for process to terminate.");
         }
 
@@ -1233,20 +1208,20 @@ export function createService(params: {
         daemon_cwd?: string;
         daemon_restart_after_crash_delay?: number;
         preForkTask?: (
-            boxedTerminateSubProcesses: { terminateSubProcesses?: ()=> Promise<number> }
-        )=> Promise<void> | void;
+            boxedTerminateSubProcesses: { terminateSubProcesses?: () => Promise<number> }
+        ) => Promise<void> | void;
     }>,
     daemonProcess(): Promise<{
         launch(): any;
-        beforeExitTask?: (error: Error | undefined )=> Promise<void>;
+        beforeExitTask?: (error: Error | undefined) => Promise<void>;
     }>,
 }) {
 
-    const { 
-        rootProcess, 
+    const {
+        rootProcess,
         daemonProcess,
         stop_timeout: _stop_timeout,
-    }= params;
+    } = params;
 
     const stop_timeout = _stop_timeout || 5000;
 
@@ -1266,9 +1241,9 @@ export function createService(params: {
         } = await rootProcess();
 
 
-        const doForwardDaemonStdout= 
-            _doForwardDaemonStdout === undefined ? 
-            true : _doForwardDaemonStdout;
+        const doForwardDaemonStdout =
+            _doForwardDaemonStdout === undefined ?
+                true : _doForwardDaemonStdout;
 
         const daemon_restart_after_crash_delay =
             _daemon_restart_after_crash_delay !== undefined ?
@@ -1277,7 +1252,7 @@ export function createService(params: {
         let log: typeof console.log = !isQuiet ?
             ((...args) => process.stdout.write(
                 Buffer.from(`(root process) ${util.format.apply(util, args)}\n`, "utf8")
-            )) : 
+            )) :
             (() => { });
 
 
@@ -1293,13 +1268,13 @@ export function createService(params: {
 
         log(`PID: ${process.pid}`);
 
-        const boxedTerminateSubProcesses: { terminateSubProcesses?: ()=> Promise<number> } = {};
+        const boxedTerminateSubProcesses: { terminateSubProcesses?: () => Promise<number> } = {};
 
         let isTerminating = false;
 
         setProcessExitHandler(async exitCause => {
 
-            isTerminating= true;
+            isTerminating = true;
 
             let childProcessExitCode: number | undefined;
 
@@ -1329,9 +1304,9 @@ export function createService(params: {
 
                 }
 
-            }else{
+            } else {
 
-                childProcessExitCode= undefined;
+                childProcessExitCode = undefined;
 
             }
 
@@ -1427,7 +1402,7 @@ export function createService(params: {
 
             if (doForwardDaemonStdout) {
 
-                daemonProcess.stdout.on("data", data => 
+                daemonProcess.stdout.on("data", data =>
                     process.stdout.write(data)
                 );
 
@@ -1453,7 +1428,7 @@ export function createService(params: {
 
                     log(`Daemon will not be restarted ( exit code : ${childProcessExitCode} ) `);
 
-                    boxedTerminateSubProcesses.terminateSubProcesses= ()=> Promise.resolve(childProcessExitCode!);
+                    boxedTerminateSubProcesses.terminateSubProcesses = () => Promise.resolve(childProcessExitCode!);
 
                     clearTimeout(reset_restart_attempt_timer);
 
@@ -1462,11 +1437,11 @@ export function createService(params: {
                 }
 
                 if (restart_attempt_remaining-- === 0) {
-                    
+
                     throw new Error("Daemon is crashing over and over");
 
                 }
-                
+
 
                 log(`Will be restarted ( attempt remaining: ${restart_attempt_remaining} )`);
 
@@ -1518,16 +1493,16 @@ export function createService(params: {
 
     const main_daemon = async () => {
 
-        const { 
-            launch, 
-            beforeExitTask 
+        const {
+            launch,
+            beforeExitTask
         } = await daemonProcess();
 
         process.once("message", () => process.emit("beforeExit", process.exitCode = 0));
 
         process.once("disconnect", () => process.exit(1));
 
-        setProcessExitHandler.log= console.log.bind(console);
+        setProcessExitHandler.log = console.log.bind(console);
 
         setProcessExitHandler(
             async exitCause => {

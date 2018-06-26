@@ -1,6 +1,7 @@
 import * as scriptLib from "../lib";
 import * as path from "path";
 import * as fs from "fs";
+import * as i from "./get__filename";
 
 
 process.removeAllListeners("unhandledRejection");
@@ -8,6 +9,20 @@ process.once("unhandledRejection", error => { throw error; });
 
 
 (async () => {
+
+    console.assert(scriptLib.get__filename() === __filename);
+
+    console.assert(i.get__filename() === __filename);
+
+    function get_filename(){
+        return scriptLib.get_caller_file_path();
+    }
+
+    console.assert(get_filename() === __filename );
+
+    console.assert((() => scriptLib.get_caller_file_path())() === __filename);
+
+    console.log("PASS get_caller_file_path");
 
     const [p_wget, p_node] = ["/tmp/v_wget", "/tmp/v_node"];
 
