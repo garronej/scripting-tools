@@ -716,7 +716,8 @@ exports.sh_if = sh_if;
  *
  * To define the return code set process.exitCode. The exit code can be set
  * before emitting "beforeExit" or in the task function.
- * If exitCode has not be defined the process 1 ( error ) will be used.
+ * If exitCode has not be defined the process will exit with 0 if
+ * there was nothing else to do and 1 otherwise.
  *
  * The task function can be synchronous or asynchronous.
  * The task function has [timeout] ms to complete.
@@ -762,12 +763,13 @@ function setProcessExitHandler(task, timeout, shouldExitIf) {
                         log("Choosing to not terminating the process despite: ", exitCause);
                         return [2 /*return*/];
                     }
-                    handler = function (exitCause) {
-                        log("Ignored extra exit cause", exitCause);
-                        setTimeout(function () { }, 1000000);
+                    handler = function (exitCause) { return log("Ignored extra exit cause", exitCause); };
+                    process_exit = function () {
+                        if (typeof process.exitCode !== "number" || isNaN(process.exitCode)) {
+                            process.exitCode = exitCause.type === "NOTHING ELSE TO DO" ? 0 : 1;
+                        }
+                        process.exit();
                     };
-                    process_exit = function () { return process.exit(typeof process.exitCode === "number" && !isNaN(process.exitCode)
-                        ? undefined : 1); };
                     log("Cause of process termination: ", exitCause);
                     setTimeout(function () {
                         log("Exit task timeout");
@@ -968,6 +970,12 @@ exports.stopProcessSync = stopProcessSync;
  * ( e.g. KILL or STOP ) the root and daemon processes will immediately terminate without
  * executing beforeExit tasks or removing pidfile.
  *
+ * NOTE: because setting listener on "message" and "disconnect" process event prevent the
+ * thread from terminating naturally where is nothing more to do if you wish to manually
+ * terminate the daemon process without termination being requested from the parent you can:
+ *        1) emit "beforeExit" on process
+ *        2) throw an exception.
+ *
  * If the daemon process is crashing over and over again the root process is eventually
  * terminated.
  *
@@ -1112,7 +1120,7 @@ function createService(params) {
                                                 return;
                                             }
                                             delete boxedTerminateSubProcesses.terminateSubProcesses;
-                                            log("Daemon process exited unexpectedly");
+                                            log("Daemon process exited without being requested to");
                                             if (daemon_restart_after_crash_delay < 0) {
                                                 if (childProcessExitCode === null) {
                                                     childProcessExitCode = 1;
@@ -1166,6 +1174,7 @@ function createService(params) {
                     _a = _b.sent(), launch = _a.launch, beforeExitTask = _a.beforeExitTask;
                     process.once("message", function () { return process.emit("beforeExit", process.exitCode = 0); });
                     process.once("disconnect", function () { return process.exit(1); });
+                    setProcessExitHandler.log = console.log.bind(console);
                     setProcessExitHandler(function (exitCause) { return __awaiter(_this, void 0, void 0, function () {
                         var error;
                         return __generator(this, function (_a) {

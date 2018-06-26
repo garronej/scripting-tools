@@ -28,6 +28,7 @@ scriptLib.createService({
             //"daemon_restart_after_crash_delay": -1,
             "preForkTask": async ref => {
 
+
                 while (true) {
 
                     const isSuccess = await new Promise<boolean>(resolve => {
@@ -72,8 +73,8 @@ scriptLib.createService({
 
                 }
 
-
             }
+            
         };
 
     },
@@ -94,9 +95,7 @@ scriptLib.createService({
         return {
             "launch": async () => {
 
-                let count = 7;
-
-                while (count--) {
+                while (true) {
 
                     log("Grinding hard...", {
                         "pid": process.pid,
@@ -106,12 +105,7 @@ scriptLib.createService({
 
                     await new Promise(resolve => setTimeout(resolve, 500));
 
-                    if( count === 3 ){
-                        setTimeout(() => { throw new Error("Raising test error") }, 0);
-                    }
-
                 }
-
 
             },
             "beforeExitTask": async error => {
@@ -122,7 +116,7 @@ scriptLib.createService({
 
                 } else {
 
-                    log("Clean exit.");
+                    log("Not exiting because of exception");
 
                 }
 

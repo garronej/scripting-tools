@@ -220,7 +220,8 @@ export declare function sh_if(cmd: string): boolean;
  *
  * To define the return code set process.exitCode. The exit code can be set
  * before emitting "beforeExit" or in the task function.
- * If exitCode has not be defined the process 1 ( error ) will be used.
+ * If exitCode has not be defined the process will exit with 0 if
+ * there was nothing else to do and 1 otherwise.
  *
  * The task function can be synchronous or asynchronous.
  * The task function has [timeout] ms to complete.
@@ -348,6 +349,12 @@ export declare namespace stopProcessSync {
  * NOTE: If the root process receive a deadly signal other than INT, USR2 or HUP
  * ( e.g. KILL or STOP ) the root and daemon processes will immediately terminate without
  * executing beforeExit tasks or removing pidfile.
+ *
+ * NOTE: because setting listener on "message" and "disconnect" process event prevent the
+ * thread from terminating naturally where is nothing more to do if you wish to manually
+ * terminate the daemon process without termination being requested from the parent you can:
+ *        1) emit "beforeExit" on process
+ *        2) throw an exception.
  *
  * If the daemon process is crashing over and over again the root process is eventually
  * terminated.

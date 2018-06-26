@@ -900,7 +900,8 @@ export function sh_if(cmd: string): boolean {
  * 
  * To define the return code set process.exitCode. The exit code can be set
  * before emitting "beforeExit" or in the task function.
- * If exitCode has not be defined the process 1 ( error ) will be used.
+ * If exitCode has not be defined the process will exit with 0 if
+ * there was nothing else to do and 1 otherwise.
  * 
  * The task function can be synchronous or asynchronous.
  * The task function has [timeout] ms to complete.
@@ -945,15 +946,19 @@ export function setProcessExitHandler(
 
         }
 
-        handler = exitCause => {
-            log("Ignored extra exit cause", exitCause);
-            setTimeout(() => { }, 1000000);
-        };
+        handler = exitCause => log("Ignored extra exit cause", exitCause) ;
 
-        const process_exit = () => process.exit(
-            typeof process.exitCode === "number" && !isNaN(process.exitCode)
-                ? undefined : 1
-        );
+        const process_exit = () => {
+
+            if( typeof process.exitCode !== "number" || isNaN(process.exitCode) ){
+
+                process.exitCode = exitCause.type === "NOTHING ELSE TO DO" ? 0 : 1;
+
+            }
+
+            process.exit();
+
+        };
 
         log("Cause of process termination: ", exitCause);
 
@@ -1205,6 +1210,12 @@ export namespace stopProcessSync {
  * ( e.g. KILL or STOP ) the root and daemon processes will immediately terminate without 
  * executing beforeExit tasks or removing pidfile.
  * 
+ * NOTE: because setting listener on "message" and "disconnect" process event prevent the 
+ * thread from terminating naturally where is nothing more to do if you wish to manually
+ * terminate the daemon process without termination being requested from the parent you can:
+ *        1) emit "beforeExit" on process
+ *        2) throw an exception.
+ * 
  * If the daemon process is crashing over and over again the root process is eventually
  * terminated.
  * 
@@ -1394,6 +1405,8 @@ export function createService(params: {
                 }
             );
 
+
+
             daemonProcess.once("error", error => {
 
                 if (isTerminating) {
@@ -1420,6 +1433,7 @@ export function createService(params: {
 
             }
 
+
             daemonProcess.once("close", (childProcessExitCode: number | null) => {
 
                 if (isTerminating) {
@@ -1428,7 +1442,7 @@ export function createService(params: {
 
                 delete boxedTerminateSubProcesses.terminateSubProcesses;
 
-                log(`Daemon process exited unexpectedly`);
+                log("Daemon process exited without being requested to");
 
                 if (daemon_restart_after_crash_delay < 0) {
 
@@ -1504,12 +1518,16 @@ export function createService(params: {
 
     const main_daemon = async () => {
 
-        const { launch, beforeExitTask } = await daemonProcess();
+        const { 
+            launch, 
+            beforeExitTask 
+        } = await daemonProcess();
 
         process.once("message", () => process.emit("beforeExit", process.exitCode = 0));
 
         process.once("disconnect", () => process.exit(1));
 
+        setProcessExitHandler.log= console.log.bind(console);
 
         setProcessExitHandler(
             async exitCause => {
@@ -1542,7 +1560,6 @@ export function createService(params: {
     }
 
 }
-
 
 /**
  * Generate a systemd config file for a service created via "createService" function
