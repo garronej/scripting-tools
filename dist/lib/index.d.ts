@@ -176,6 +176,15 @@ export declare function createSymlink(src_path: string, dst_path: string): void;
 export declare function createScript(file_path: string, content: string): void;
 /**
  *
+ * Let's say this function is called from
+ * f1 defined, if f1 is called by
+ * a line of code file.ts this function
+ * will return the path to file.ts.
+ *
+ */
+export declare function get_caller_file_path(): string;
+/**
+ *
  * Equivalent to the pattern $() in bash.
  * Strip final LF if present.
  * If cmd fail no error is thrown, an empty string is returned.
@@ -194,7 +203,7 @@ export declare function sh_if(cmd: string): boolean;
  *
  * Allow to schedule action function to perform before exiting.
  *
- * The action function will always be called before the process stop
+ * The task function will always be called before the process stop
  * unless process.exit is explicitly called somewhere or
  * if the process receive any signal other * than the ones specified
  * in the ExitCause.Signal["signal"] type.
@@ -205,37 +214,39 @@ export declare function sh_if(cmd: string): boolean;
  * 3) If a signal ( one of the handled ) is sent to the process.
  *
  * To manually exit the process there is two option:
- * - Call process.exit(X) but action function will not be called.
+ * - Call process.exit(X) but the task function will not be called.
  * - Emit "beforeExit" on process object ( process.emit("beforeExit, process.exitCode= X) );
  *  Doing so you simulate 1st stop condition ( natural termination ).
  *
  * To define the return code set process.exitCode. The exit code can be set
- * before emitting "beforeExit" or in the action function.
+ * before emitting "beforeExit" or in the task function.
  * If exitCode has not be defined the process 1 ( error ) will be used.
  *
- * The action function can be synchronous or asynchronous.
- * The action function has [timeout] ms to complete.
+ * The task function can be synchronous or asynchronous.
+ * The task function has [timeout] ms to complete.
  * If it has not completed within this delay the process will
  * be terminated anyway.
  * WARNING: It is important not to perform sync operation that can
- * hang for a long time in the action function ( e.g. execSync("sleep 1000"); )
+ * hang for a long time in the task function ( e.g. execSync("sleep 1000"); )
  * because while the sync operation are performed the timeout can't be triggered.
  *
- * As soon as the action function is called all the other exitCause that
- * may auccur will be ignored so that the action function have time to complete.
- * Anyway the action function is called only once.
+ * As soon as the task function is called all the other exitCause that
+ * may auccur will be ignored so that the task function have time to complete.
+ * Anyway the task function is called only once.
  *
- * Whether the action function complete by successfully or throw
+ * Whether the task function complete by successfully or throw
  * an exception the process will terminate with exit code set
  * in process.exitCode at the time of the completion.
  *
- * (optional) if exitOnCause(exitCause) return false the action function
- * will not be called and the the process will continue as
- * if nothing happened.
+ * Provide shouldExitIf function to filter what should be
+ * considered a case to terminate the process.
+ * Only exception and supported signals can be bypassed,
+ * Nothing else to do will always terminate the process.
+ * By default exiting on any signal or uncaught errors.
  *
  */
-export declare function setExitHandler(action: (exitCause: setExitHandler.ExitCause) => any, timeout?: number, exitOnCause?: (exitCause: Exclude<setExitHandler.ExitCause, setExitHandler.ExitCause.NothingElseToDo>) => boolean): void;
-export declare namespace setExitHandler {
+export declare function setProcessExitHandler(task: (exitCause: setProcessExitHandler.ExitCause) => any, timeout?: number, shouldExitIf?: (exitCause: Exclude<setProcessExitHandler.ExitCause, setProcessExitHandler.ExitCause.NothingElseToDo>) => boolean): void;
+export declare namespace setProcessExitHandler {
     type ExitCause = ExitCause.Signal | ExitCause.Exception | ExitCause.NothingElseToDo;
     namespace ExitCause {
         type Signal = {
@@ -286,3 +297,84 @@ export declare namespace stopProcessSync {
     function isRunning(pidfile_path: string): boolean;
     let log: typeof console.log;
 }
+/**
+ *
+ * Function to create the entry point (main.js) of a node service that can:
+ * -Restart on crash (without relying on systemd to do so).
+ * -Execute as specific unix user but can perform tasks as root before start.
+ * -Be stopped gracefully by sending USR2 signal on the root process ( identified by pidfile ).
+ * -Be started via a shell and gracefully stopped with CTRL-C (INT signal).
+ * -Ensure only one instance of the service run at the same time.
+ *      ( if at the time the main is called there is an other instance of the service
+ *      running it is gracefully terminated )
+ * -Ensure that the process will terminate in at most [ stop_timeout ] ms after
+ *      receiving INT or USR2 signal. (default 5second)
+ * -Forward daemon process stdout to root process stdout.
+ *
+ * =>stop_timeout: The maximum amount of time ( in ms ) the root process can
+ *
+ * => rootProcess function should return:
+ * -pidfile_path: where to store the pid of the root process.
+ *      take to terminate after requested to exit gracefully.
+ * -isQuiet?: set to true to disable root process debug info logging on stdout. ( default false )
+ * -doForwardDaemonStdout?: set to true to forward everything the daemon
+ *      process write to stdout to the root process stdout. ( default true )
+ * -daemon_unix_user?: User by who should be owned the daemon process.
+ * -daemon_node_path?: Node.js executable that should be used to by the daemon process.
+ * -daemon_cwd?: working directory of the daemon process.
+ * -daemon_restart_after_crash_delay?: Delay in ms before creating a new fork of the daemon
+ * after a crash. If set to a negative number the daemon will not be restarted after it terminate restart.
+ * The exit code of the main process will be the exit code of the daemon.
+ * Default to 500ms.
+ * -preForkTask: Task to perform before forking a daemon process.
+ *      It is called just before forking the daemon process. ( called again on every restart. )
+ *      If the function is async the daemon will not be forked until the returned promise resolve.
+ *      The function should never raise exception but if it does root process will exit with code 1.
+ *      (pidfile will be deleted)
+ *      If the function is async and if it need to spawn child processes then
+ *      an implementation for terminateSubProcess ( passed as reference ) should be provided so that
+ *      if when called it kill all the child processes then resolve once they are terminated.
+ *      The to which the promise resolve will be used as exit code for the root process.
+ *      Note that terminateSubProcess should never be called, it is a OUT parameter.
+ *
+ * => daemonProcess function should return:
+ * -launch: the function that the daemon process need to call to start the actual job that the service is meant to perform.
+ * -beforeExitTask: function that should be called before the daemon process exit. ( e.g. creating crash report ).
+ *      If the daemon process is terminating due to an error the error will be passed as argument.
+ *      There is two scenario that will led to this function NOT being called:
+ *      1)The daemon process receive KILL or other deadly signal that can't be overridden.
+ *      2)The root process terminate.
+ *
+ * NOTE: If the root process receive a deadly signal other than INT, USR2 or HUP
+ * ( e.g. KILL or STOP ) the root and daemon processes will immediately terminate without
+ * executing beforeExit tasks or removing pidfile.
+ *
+ * If the daemon process is crashing over and over again the root process is eventually
+ * terminated.
+ *
+ * The main.js must be called as root ( otherwise close with error message )
+ *
+ */
+export declare function createService(params: {
+    stop_timeout?: number;
+    rootProcess(): Promise<{
+        pidfile_path: string;
+        isQuiet?: boolean;
+        doForwardDaemonStdout?: boolean;
+        daemon_unix_user?: string;
+        daemon_node_path?: string;
+        daemon_cwd?: string;
+        daemon_restart_after_crash_delay?: number;
+        preForkTask?: (boxedTerminateSubProcesses: {
+            terminateSubProcesses?: () => Promise<number>;
+        }) => Promise<void> | void;
+    }>;
+    daemonProcess(): Promise<{
+        launch(): any;
+        beforeExitTask?: (error: Error | undefined) => Promise<void>;
+    }>;
+}): void;
+/**
+ * Generate a systemd config file for a service created via "createService" function
+ */
+export declare function makeSystemdConfigFile(main_js_path: string, node_path?: string): string;

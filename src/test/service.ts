@@ -1,235 +1,139 @@
 import * as scriptLib from "../lib";
-import * as child_process from "child_process";
-import * as path from "path";
-import * as fs from "fs";
 
-/**
- * 
- * Example of of main for NodeJS app that should:
- * -Restart on crash.
- * -Execute as a specific user but need to performs
- * tasks as root before.
- * 
- * Main process should be run as root.
- * Process can be terminated gracefully via CTRL-C or
- * sending SIGUSR2 to ./pid
- * 
- * If the root process exit the child process start gracefully.
- * 
- * 
- * 
- * 
- */
-
- /*
-
- System.d config file sample:
-
- fs.writeFileSync(
-     path.join("/etc/systemd/system", `${srv_name}.service`),
-     Buffer.from([
-         `[Unit]`,
-         `Description=${srv_name} service.`,
-         `After=network.target`,
-         ``,
-         `[Service]`,
-         `ExecStart=${node_path} ${path.join(__dirname, "main.js")}`,
-         `StandardOutput=inherit`,
-         `KillSignal=SIGUSR2`,
-         `SendSIGKILL=no`,
-         ``,
-         `[Install]`,
-         `WantedBy=multi-user.target`,
-         ``
-     ].join("\n"), "utf8")
- );
-
- */
-
-const stop_timeout= 5000;
-
-if( process.getuid() === 0 ){
-
-    parentProcessMain();
-
-}else if( !!process.send ){
-
-    childProcessMain();
-
-}else{
-
-    throw new Error("Should be exec as root");
-
-}
-
-function parentProcessMain() {
-
-    const pidfile_path = path.join(__dirname, "pid");
-
-    scriptLib.stopProcessSync.log= console.log.bind(console);
-
-    scriptLib.stopProcessSync(pidfile_path, "SIGUSR2");
-
-    if( fs.existsSync(pidfile_path) ){
-        throw Error("Other instance launched simultaneously");
-    }
-
-    fs.writeFileSync(pidfile_path, process.pid.toString());
-
-    console.log("(parent) PID: " + process.pid);
-
-    scriptLib.setExitHandler(async exitCause=>{
-
-        console.log("(parent) in before exit", { exitCause });
-
-        process.exitCode = await gracefullyTerminateChildProcess();
-
-        console.log("(parent) deleting pid file");
-
-        fs.unlinkSync(pidfile_path);
-
-        console.log(`(parent) exiting with child process exit code: ${process.exitCode}`);
-
-    }, stop_timeout);
-
-    scriptLib.setExitHandler.log= console.log.bind(console);
-
-    let gracefullyTerminateChildProcess: () => Promise<number>;
-
-    (async function callee() {
-
-        gracefullyTerminateChildProcess = () => Promise.resolve(0);
-
-        console.log("(parent) Starting child process...we do stuffs as root before...");
-
-        await new Promise(resolve => setTimeout(resolve, 3000));
-
-        console.log("(parent) We fork now");
-
-        const childProcess = child_process.fork(
-            __filename,
-            [],
-            {
-                "uid": scriptLib.get_uid("pi"),
-                "gid": scriptLib.get_gid("pi"),
-                "silent": true,
-                "cwd": "/home/pi",
-                "execPath": "/usr/bin/node"
-            }
-        );
-
-        childProcess.stdout.on("data", data => process.stdout.write(data));
-
-        childProcess.once("close", () => callee());
-
-        gracefullyTerminateChildProcess = () => new Promise<number>(resolve => {
-
-            console.log("(parent) in gracefullyTerminateChildProcess");
-
-            childProcess.send(null);
-
-            childProcess.removeAllListeners("close");
-
-            const timer = setTimeout(() => { 
-
-                console.log("(parent) child process not responding, force kill...");
-
-                childProcess.kill("SIGKILL") 
-
-            }, (9/10)*stop_timeout );
-
-            childProcess.once("close", (code: number | null ) => {
-
-                if( typeof code !== "number" || isNaN(code) ){
-                    code = 1;
-                }
-
-                console.log("(parent) child process close code: " + code);
-                clearTimeout(timer);
-                resolve(code);
-
-            });
-
-        });
-
-
-    })();
-
-}
-
-async function childProcessMain() {
-
-    //Here load launch from lib.
-    const util = await import("util");
-
-    const logfile_path = path.join(__dirname, "log");
-
-    const log: typeof console.log = (...args)=> {
-
-        const message = Buffer.from(
-            scriptLib.colorize(util.format.apply(util, args), "YELLOW") + "\n",
-            "utf8"
-        );
-
-        process.stdout.write(message);
-
-        fs.appendFileSync(logfile_path, message);
-
-
-    };
-
-    log("PID: " + process.pid);
-
-    process.on("message", () => {
-
-        log("received parent's message => terminate gracefully");
-
-        process.emit("beforeExit", process.exitCode = 0);
-
-    });
-
-    process.once("disconnect", () => process.exit(1));
-
-    scriptLib.setExitHandler(
-        async () => {
-
-            log("do some async stuffs before closing");
-            await new Promise(resolve => setTimeout(resolve, 3000));
-            log(`exiting with code ${process.exitCode}`);
-
-        },
-        (8/10) * stop_timeout,
-        exitCause => exitCause.type !== "SIGNAL"
-    );
-
-    //scriptLib.setExitHandler.log= log;
-
-    (async function launch() {
-
-        while (true) {
-
-            log(`performing actual job ${process.pid}...`);
-
-            await new Promise(resolve => setTimeout(resolve, 1000));
-
-            /*
-            log(`Attempt to block the thread`);
-
-            for (let i = 0; i < 99999; i++) {
-                for (let j = 0; j < 99999; j++) {
-                    for (let k = 0; k < 99999; k++) {
-                        for (let l = 0; l < 99999; l++) {
-                            (new Array(10000)).fill(NaN).map(() => Math.random());
-                        }
-                    }
-                }
-            }
-
-            log(`process released`);
-            */
-
+scriptLib.createService({
+    "stop_timeout": 5678,
+    "rootProcess": async () => {
+
+        const path = await import("path");
+        const child_process = await import("child_process");
+        const util = await import("util");
+
+        const log: typeof console.log = (...args) => {
+            process.stdout.write(
+                Buffer.from(
+                    scriptLib.colorize(`(root process custom) ${util.format.apply(util, args)}\n`, "YELLOW"),
+                    "utf8"
+                )
+            );
         }
 
-    })();
+        return {
+            "pidfile_path": path.join(__dirname, "pid"),
+            "isQuiet": false,
+            "doForwardDaemonStdout": true,
+            "daemon_unix_user": "pi",
+            "daemon_node_path": "/usr/bin/node",
+            "daemon_cwd": "/home/pi",
+            "daemon_restart_after_crash_delay": 1234,
+            //"daemon_restart_after_crash_delay": -1,
+            "preForkTask": async ref => {
 
-}
+                while (true) {
+
+                    const isSuccess = await new Promise<boolean>(resolve => {
+
+                        log("preFork subprocess...");
+
+                        const childProcess = child_process.exec("sleep 0.2 && (($RANDOM%2))", { "shell": "/bin/bash" });
+
+                        childProcess.once("error", () => resolve(false))
+                            .once("close", code => (code === 0) ? resolve(true) : resolve(false))
+                            ;
+
+                        ref.terminateSubProcesses = () => new Promise(resolve_ => {
+
+                            resolve = () => {
+
+                                log("preFork subprocess killed");
+
+                                resolve_(0);
+
+                            };
+
+                            log("kill preFork");
+
+                            childProcess.kill("SIGKILL");
+
+                        });
+
+                    });
+
+                    if (isSuccess) {
+
+                        log("preFork tasks complete");
+
+                        break;
+
+                    } else {
+
+                        log("not yet");
+
+                    }
+
+                }
+
+
+            }
+        };
+
+    },
+    "daemonProcess": async () => {
+
+        const os = await import("os");
+        const util = await import("util");
+
+        const log: typeof console.log = (...args) => {
+            process.stdout.write(
+                Buffer.from(
+                    scriptLib.colorize(`(daemon process) ${util.format.apply(util, args)}\n`, "GREEN"),
+                    "utf8"
+                )
+            );
+        }
+
+        return {
+            "launch": async () => {
+
+                let count = 7;
+
+                while (count--) {
+
+                    log("Grinding hard...", {
+                        "pid": process.pid,
+                        "user": os.userInfo().username,
+                        "cwd": process.cwd()
+                    });
+
+                    await new Promise(resolve => setTimeout(resolve, 500));
+
+                    if( count === 3 ){
+                        setTimeout(() => { throw new Error("Raising test error") }, 0);
+                    }
+
+                }
+
+
+            },
+            "beforeExitTask": async error => {
+
+                if (!!error) {
+
+                    log("Exiting because of an error:", error);
+
+                } else {
+
+                    log("Clean exit.");
+
+                }
+
+                log("Performing phony cleanup task...");
+
+                await new Promise(resolve => setTimeout(resolve, 800));
+
+                log("before exit completed successfully!");
+
+            }
+        };
+
+    }
+});

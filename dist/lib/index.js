@@ -348,7 +348,7 @@ exports.apt_get_install = apt_get_install;
 })(apt_get_install = exports.apt_get_install || (exports.apt_get_install = {}));
 function exit_if_not_root() {
     if (process.getuid() !== 0) {
-        console.log(colorize("Error: This script require root privilege", "RED"));
+        console.log(colorize("Error: root privilege required ", "RED"));
         process.exit(1);
     }
 }
@@ -635,6 +635,33 @@ function createScript(file_path, content) {
 exports.createScript = createScript;
 /**
  *
+ * Let's say this function is called from
+ * f1 defined, if f1 is called by
+ * a line of code file.ts this function
+ * will return the path to file.ts.
+ *
+ */
+function get_caller_file_path() {
+    var originalFunc = Error.prepareStackTrace;
+    var callerFile;
+    try {
+        var error = new Error();
+        Error.prepareStackTrace = function (_, stack) { return stack; };
+        var currentFile = error.stack.shift().getFileName();
+        while (error.stack.length) {
+            callerFile = error.stack.shift().getFileName();
+            if (currentFile !== callerFile) {
+                break;
+            }
+        }
+    }
+    catch (_a) { }
+    Error.prepareStackTrace = originalFunc;
+    return callerFile;
+}
+exports.get_caller_file_path = get_caller_file_path;
+/**
+ *
  * Equivalent to the pattern $() in bash.
  * Strip final LF if present.
  * If cmd fail no error is thrown, an empty string is returned.
@@ -672,7 +699,7 @@ exports.sh_if = sh_if;
  *
  * Allow to schedule action function to perform before exiting.
  *
- * The action function will always be called before the process stop
+ * The task function will always be called before the process stop
  * unless process.exit is explicitly called somewhere or
  * if the process receive any signal other * than the ones specified
  * in the ExitCause.Signal["signal"] type.
@@ -683,72 +710,74 @@ exports.sh_if = sh_if;
  * 3) If a signal ( one of the handled ) is sent to the process.
  *
  * To manually exit the process there is two option:
- * - Call process.exit(X) but action function will not be called.
+ * - Call process.exit(X) but the task function will not be called.
  * - Emit "beforeExit" on process object ( process.emit("beforeExit, process.exitCode= X) );
  *  Doing so you simulate 1st stop condition ( natural termination ).
  *
  * To define the return code set process.exitCode. The exit code can be set
- * before emitting "beforeExit" or in the action function.
+ * before emitting "beforeExit" or in the task function.
  * If exitCode has not be defined the process 1 ( error ) will be used.
  *
- * The action function can be synchronous or asynchronous.
- * The action function has [timeout] ms to complete.
+ * The task function can be synchronous or asynchronous.
+ * The task function has [timeout] ms to complete.
  * If it has not completed within this delay the process will
  * be terminated anyway.
  * WARNING: It is important not to perform sync operation that can
- * hang for a long time in the action function ( e.g. execSync("sleep 1000"); )
+ * hang for a long time in the task function ( e.g. execSync("sleep 1000"); )
  * because while the sync operation are performed the timeout can't be triggered.
  *
- * As soon as the action function is called all the other exitCause that
- * may auccur will be ignored so that the action function have time to complete.
- * Anyway the action function is called only once.
+ * As soon as the task function is called all the other exitCause that
+ * may auccur will be ignored so that the task function have time to complete.
+ * Anyway the task function is called only once.
  *
- * Whether the action function complete by successfully or throw
+ * Whether the task function complete by successfully or throw
  * an exception the process will terminate with exit code set
  * in process.exitCode at the time of the completion.
  *
- * (optional) if exitOnCause(exitCause) return false the action function
- * will not be called and the the process will continue as
- * if nothing happened.
+ * Provide shouldExitIf function to filter what should be
+ * considered a case to terminate the process.
+ * Only exception and supported signals can be bypassed,
+ * Nothing else to do will always terminate the process.
+ * By default exiting on any signal or uncaught errors.
  *
  */
-function setExitHandler(action, timeout, exitOnCause) {
+function setProcessExitHandler(task, timeout, shouldExitIf) {
     var _this = this;
     if (timeout === void 0) { timeout = 4000; }
-    if (exitOnCause === void 0) { exitOnCause = function () { return true; }; }
+    if (shouldExitIf === void 0) { shouldExitIf = function () { return true; }; }
     var e_2, _a, e_3, _b;
     var log = function () {
         var args = [];
         for (var _i = 0; _i < arguments.length; _i++) {
             args[_i] = arguments[_i];
         }
-        return setExitHandler.log("===exitHandler=== " + util.format.apply(util, args));
+        return setProcessExitHandler.log("===exitHandler=== " + util.format.apply(util, args));
     };
     var handler = function (exitCause) { return __awaiter(_this, void 0, void 0, function () {
         var process_exit, actionOut, error_4;
         return __generator(this, function (_a) {
             switch (_a.label) {
                 case 0:
-                    if (exitCause.type !== "NOTHING ELSE TO DO" && !exitOnCause(exitCause)) {
-                        log("prevent exit on cause", exitCause);
+                    if (exitCause.type !== "NOTHING ELSE TO DO" && !shouldExitIf(exitCause)) {
+                        log("Choosing to not terminating the process despite: ", exitCause);
                         return [2 /*return*/];
                     }
                     handler = function (exitCause) {
-                        log("ignored extra exit cause", exitCause);
+                        log("Ignored extra exit cause", exitCause);
                         setTimeout(function () { }, 1000000);
                     };
                     process_exit = function () { return process.exit(typeof process.exitCode === "number" && !isNaN(process.exitCode)
                         ? undefined : 1); };
-                    log("exit cause", exitCause);
+                    log("Cause of process termination: ", exitCause);
                     setTimeout(function () {
-                        log("action function timeout");
+                        log("Exit task timeout");
                         process_exit();
                     }, timeout);
                     try {
-                        actionOut = action(exitCause);
+                        actionOut = task(exitCause);
                     }
                     catch (error) {
-                        log("action function thrown", error);
+                        log("Exit task thrown error", error);
                         process_exit();
                         return [2 /*return*/];
                     }
@@ -762,11 +791,11 @@ function setExitHandler(action, timeout, exitOnCause) {
                     return [3 /*break*/, 4];
                 case 3:
                     error_4 = _a.sent();
-                    log("action function rejected", error_4);
+                    log("Exit task returned a promise that rejected", error_4);
                     process_exit();
                     return [2 /*return*/];
                 case 4:
-                    log("action function complete success");
+                    log("Exit task complete successfully.");
                     process_exit();
                     return [2 /*return*/];
             }
@@ -776,7 +805,7 @@ function setExitHandler(action, timeout, exitOnCause) {
         process.on(signal, function () { return handler({ "type": "SIGNAL", signal: signal }); });
     };
     try {
-        for (var _c = __values(setExitHandler.ExitCause.Signal.list), _d = _c.next(); !_d.done; _d = _c.next()) {
+        for (var _c = __values(setProcessExitHandler.ExitCause.Signal.list), _d = _c.next(); !_d.done; _d = _c.next()) {
             var signal = _d.value;
             _loop_1(signal);
         }
@@ -803,8 +832,8 @@ function setExitHandler(action, timeout, exitOnCause) {
     }
     process.on("beforeExit", function () { return handler({ "type": "NOTHING ELSE TO DO" }); });
 }
-exports.setExitHandler = setExitHandler;
-(function (setExitHandler) {
+exports.setProcessExitHandler = setProcessExitHandler;
+(function (setProcessExitHandler) {
     var ExitCause;
     (function (ExitCause) {
         var Signal;
@@ -812,9 +841,9 @@ exports.setExitHandler = setExitHandler;
             Signal._obj = { "SIGINT": null, "SIGUSR2": null, "SIGHUP": null };
             Signal.list = Object.keys(Signal._obj);
         })(Signal = ExitCause.Signal || (ExitCause.Signal = {}));
-    })(ExitCause = setExitHandler.ExitCause || (setExitHandler.ExitCause = {}));
-    setExitHandler.log = function () { };
-})(setExitHandler = exports.setExitHandler || (exports.setExitHandler = {}));
+    })(ExitCause = setProcessExitHandler.ExitCause || (setProcessExitHandler.ExitCause = {}));
+    setProcessExitHandler.log = function () { };
+})(setProcessExitHandler = exports.setProcessExitHandler || (exports.setProcessExitHandler = {}));
 /**
  *
  * Stop a process by sending a specific signal.
@@ -836,17 +865,24 @@ function stopProcessSync(pidfile_path, signal) {
         }
         return stopProcessSync.log("===stopProcessSync=== " + util.format.apply(util, args));
     };
+    log("Called on pidfile " + pidfile_path + "...");
     if (!stopProcessSync.isRunning(pidfile_path)) {
-        log("not running");
+        log("not running.");
         return;
     }
-    log("sending signal " + signal);
+    log("Sending signal " + signal + "...");
     execSyncNoCmdTrace(stopProcessSync.buildSendSignalCmd(pidfile_path, signal), { "stdio": "pipe" });
+    var isFirstCheck = true;
     while (stopProcessSync.isRunning(pidfile_path)) {
-        log("waiting until process terminate...");
+        if (isFirstCheck) {
+            isFirstCheck = false;
+        }
+        else {
+            log("Waiting for process to terminate.");
+        }
         execSyncNoCmdTrace("sleep 0.5", { "stdio": "pipe" });
     }
-    log("process terminated");
+    log("Process terminated.");
 }
 exports.stopProcessSync = stopProcessSync;
 (function (stopProcessSync) {
@@ -880,3 +916,302 @@ exports.stopProcessSync = stopProcessSync;
     stopProcessSync.isRunning = isRunning;
     stopProcessSync.log = function () { };
 })(stopProcessSync = exports.stopProcessSync || (exports.stopProcessSync = {}));
+/**
+ *
+ * Function to create the entry point (main.js) of a node service that can:
+ * -Restart on crash (without relying on systemd to do so).
+ * -Execute as specific unix user but can perform tasks as root before start.
+ * -Be stopped gracefully by sending USR2 signal on the root process ( identified by pidfile ).
+ * -Be started via a shell and gracefully stopped with CTRL-C (INT signal).
+ * -Ensure only one instance of the service run at the same time.
+ *      ( if at the time the main is called there is an other instance of the service
+ *      running it is gracefully terminated )
+ * -Ensure that the process will terminate in at most [ stop_timeout ] ms after
+ *      receiving INT or USR2 signal. (default 5second)
+ * -Forward daemon process stdout to root process stdout.
+ *
+ * =>stop_timeout: The maximum amount of time ( in ms ) the root process can
+ *
+ * => rootProcess function should return:
+ * -pidfile_path: where to store the pid of the root process.
+ *      take to terminate after requested to exit gracefully.
+ * -isQuiet?: set to true to disable root process debug info logging on stdout. ( default false )
+ * -doForwardDaemonStdout?: set to true to forward everything the daemon
+ *      process write to stdout to the root process stdout. ( default true )
+ * -daemon_unix_user?: User by who should be owned the daemon process.
+ * -daemon_node_path?: Node.js executable that should be used to by the daemon process.
+ * -daemon_cwd?: working directory of the daemon process.
+ * -daemon_restart_after_crash_delay?: Delay in ms before creating a new fork of the daemon
+ * after a crash. If set to a negative number the daemon will not be restarted after it terminate restart.
+ * The exit code of the main process will be the exit code of the daemon.
+ * Default to 500ms.
+ * -preForkTask: Task to perform before forking a daemon process.
+ *      It is called just before forking the daemon process. ( called again on every restart. )
+ *      If the function is async the daemon will not be forked until the returned promise resolve.
+ *      The function should never raise exception but if it does root process will exit with code 1.
+ *      (pidfile will be deleted)
+ *      If the function is async and if it need to spawn child processes then
+ *      an implementation for terminateSubProcess ( passed as reference ) should be provided so that
+ *      if when called it kill all the child processes then resolve once they are terminated.
+ *      The to which the promise resolve will be used as exit code for the root process.
+ *      Note that terminateSubProcess should never be called, it is a OUT parameter.
+ *
+ * => daemonProcess function should return:
+ * -launch: the function that the daemon process need to call to start the actual job that the service is meant to perform.
+ * -beforeExitTask: function that should be called before the daemon process exit. ( e.g. creating crash report ).
+ *      If the daemon process is terminating due to an error the error will be passed as argument.
+ *      There is two scenario that will led to this function NOT being called:
+ *      1)The daemon process receive KILL or other deadly signal that can't be overridden.
+ *      2)The root process terminate.
+ *
+ * NOTE: If the root process receive a deadly signal other than INT, USR2 or HUP
+ * ( e.g. KILL or STOP ) the root and daemon processes will immediately terminate without
+ * executing beforeExit tasks or removing pidfile.
+ *
+ * If the daemon process is crashing over and over again the root process is eventually
+ * terminated.
+ *
+ * The main.js must be called as root ( otherwise close with error message )
+ *
+ */
+function createService(params) {
+    var _this = this;
+    var rootProcess = params.rootProcess, daemonProcess = params.daemonProcess, _stop_timeout = params.stop_timeout;
+    var stop_timeout = _stop_timeout || 5000;
+    var main_root = function (main_js_path) { return __awaiter(_this, void 0, void 0, function () {
+        var _a, pidfile_path, isQuiet, _doForwardDaemonStdout, daemon_unix_user, daemon_node_path, daemon_cwd, _daemon_restart_after_crash_delay, preForkTask, doForwardDaemonStdout, daemon_restart_after_crash_delay, log, boxedTerminateSubProcesses, isTerminating, max_consecutive_restart, restart_attempt_remaining, reset_restart_attempt_timer;
+        var _this = this;
+        return __generator(this, function (_b) {
+            switch (_b.label) {
+                case 0:
+                    exit_if_not_root();
+                    return [4 /*yield*/, rootProcess()];
+                case 1:
+                    _a = _b.sent(), pidfile_path = _a.pidfile_path, isQuiet = _a.isQuiet, _doForwardDaemonStdout = _a.doForwardDaemonStdout, daemon_unix_user = _a.daemon_unix_user, daemon_node_path = _a.daemon_node_path, daemon_cwd = _a.daemon_cwd, _daemon_restart_after_crash_delay = _a.daemon_restart_after_crash_delay, preForkTask = _a.preForkTask;
+                    doForwardDaemonStdout = _doForwardDaemonStdout === undefined ?
+                        true : _doForwardDaemonStdout;
+                    daemon_restart_after_crash_delay = _daemon_restart_after_crash_delay !== undefined ?
+                        _daemon_restart_after_crash_delay : 500;
+                    log = !isQuiet ?
+                        (function () {
+                            var args = [];
+                            for (var _i = 0; _i < arguments.length; _i++) {
+                                args[_i] = arguments[_i];
+                            }
+                            return process.stdout.write(Buffer.from("(root process) " + util.format.apply(util, args) + "\n", "utf8"));
+                        }) :
+                        (function () { });
+                    stopProcessSync.log = log;
+                    stopProcessSync(pidfile_path, "SIGUSR2");
+                    if (fs.existsSync(pidfile_path)) {
+                        throw Error("Other instance launched simultaneously");
+                    }
+                    fs.writeFileSync(pidfile_path, process.pid.toString());
+                    log("PID: " + process.pid);
+                    boxedTerminateSubProcesses = {};
+                    isTerminating = false;
+                    setProcessExitHandler(function (exitCause) { return __awaiter(_this, void 0, void 0, function () {
+                        var childProcessExitCode, terminateSubProcesses, error_5;
+                        return __generator(this, function (_a) {
+                            switch (_a.label) {
+                                case 0:
+                                    isTerminating = true;
+                                    terminateSubProcesses = boxedTerminateSubProcesses.terminateSubProcesses;
+                                    if (!!!terminateSubProcesses) return [3 /*break*/, 5];
+                                    _a.label = 1;
+                                case 1:
+                                    _a.trys.push([1, 3, , 4]);
+                                    return [4 /*yield*/, Promise.race([
+                                            new Promise(function (_, reject) { return setTimeout(function () { return reject(new Error("TerminateSubprocess took too long to resolve")); }, (16 / 17) * stop_timeout); }),
+                                            terminateSubProcesses()
+                                        ])];
+                                case 2:
+                                    childProcessExitCode = _a.sent();
+                                    return [3 /*break*/, 4];
+                                case 3:
+                                    error_5 = _a.sent();
+                                    log("terminateSubProcess error", error_5);
+                                    childProcessExitCode = 1;
+                                    return [3 /*break*/, 4];
+                                case 4: return [3 /*break*/, 6];
+                                case 5:
+                                    childProcessExitCode = undefined;
+                                    _a.label = 6;
+                                case 6:
+                                    if (exitCause.type === "EXCEPTION") {
+                                        process.exitCode = 1;
+                                    }
+                                    else if (childProcessExitCode !== undefined) {
+                                        process.exitCode = childProcessExitCode;
+                                    }
+                                    else {
+                                        process.exitCode = 0;
+                                    }
+                                    fs.unlinkSync(pidfile_path);
+                                    log("pidfile deleted");
+                                    return [2 /*return*/];
+                            }
+                        });
+                    }); }, stop_timeout);
+                    setProcessExitHandler.log = log;
+                    max_consecutive_restart = 3;
+                    restart_attempt_remaining = max_consecutive_restart;
+                    reset_restart_attempt_timer = undefined;
+                    (function callee() {
+                        return __awaiter(this, void 0, void 0, function () {
+                            var error_6, daemonProcess;
+                            return __generator(this, function (_a) {
+                                switch (_a.label) {
+                                    case 0:
+                                        clearTimeout(reset_restart_attempt_timer);
+                                        if (!!!preForkTask) return [3 /*break*/, 4];
+                                        log("performing pre fork tasks...");
+                                        _a.label = 1;
+                                    case 1:
+                                        _a.trys.push([1, 3, , 4]);
+                                        return [4 /*yield*/, preForkTask(boxedTerminateSubProcesses)];
+                                    case 2:
+                                        _a.sent();
+                                        return [3 /*break*/, 4];
+                                    case 3:
+                                        error_6 = _a.sent();
+                                        log("PreFork function raised an exception ( altho it should not have! ) ");
+                                        throw error_6;
+                                    case 4:
+                                        if (isTerminating) {
+                                            return [2 /*return*/];
+                                        }
+                                        log("Forking daemon process now.");
+                                        reset_restart_attempt_timer = setTimeout(function () { return restart_attempt_remaining = max_consecutive_restart; }, 10000);
+                                        daemonProcess = child_process.fork(main_js_path, [], {
+                                            "uid": daemon_unix_user ? get_uid(daemon_unix_user) : undefined,
+                                            "gid": daemon_unix_user ? get_gid(daemon_unix_user) : undefined,
+                                            "silent": true,
+                                            "cwd": daemon_cwd,
+                                            "execPath": daemon_node_path
+                                        });
+                                        daemonProcess.once("error", function (error) {
+                                            if (isTerminating) {
+                                                return;
+                                            }
+                                            log([
+                                                "Error evt emitted by daemon process which mean that: ",
+                                                "The process could not be spawned, or",
+                                                "The process could not be killed, or",
+                                                "Sending a message to the child process failed."
+                                            ].join("\n"));
+                                            throw error;
+                                        });
+                                        if (doForwardDaemonStdout) {
+                                            daemonProcess.stdout.on("data", function (data) {
+                                                return process.stdout.write(data);
+                                            });
+                                        }
+                                        daemonProcess.once("close", function (childProcessExitCode) {
+                                            if (isTerminating) {
+                                                return;
+                                            }
+                                            delete boxedTerminateSubProcesses.terminateSubProcesses;
+                                            log("Daemon process exited unexpectedly");
+                                            if (daemon_restart_after_crash_delay < 0) {
+                                                if (childProcessExitCode === null) {
+                                                    childProcessExitCode = 1;
+                                                }
+                                                log("Daemon will not be restarted ( exit code : " + childProcessExitCode + " ) ");
+                                                boxedTerminateSubProcesses.terminateSubProcesses = function () { return Promise.resolve(childProcessExitCode); };
+                                                clearTimeout(reset_restart_attempt_timer);
+                                                return;
+                                            }
+                                            if (restart_attempt_remaining-- === 0) {
+                                                throw new Error("Daemon is crashing over and over");
+                                            }
+                                            log("Will be restarted ( attempt remaining: " + restart_attempt_remaining + " )");
+                                            setTimeout(function () { return callee(); }, daemon_restart_after_crash_delay);
+                                        });
+                                        boxedTerminateSubProcesses.terminateSubProcesses = function () { return new Promise(function (resolve) {
+                                            log("Attempt to gracefully terminate daemon process...");
+                                            daemonProcess.send(null);
+                                            daemonProcess.removeAllListeners("close");
+                                            var isKilled = false;
+                                            var timer = setTimeout(function () {
+                                                isKilled = true;
+                                                log("Daemon process not responding, sending KILL signal...");
+                                                daemonProcess.kill("SIGKILL");
+                                            }, (9 / 10) * stop_timeout);
+                                            daemonProcess.once("close", function (childProcessExitCode) {
+                                                if (typeof childProcessExitCode !== "number" || isNaN(childProcessExitCode)) {
+                                                    childProcessExitCode = isKilled ? 1 : 0;
+                                                }
+                                                log("Daemon process exited with code " + childProcessExitCode);
+                                                clearTimeout(timer);
+                                                resolve(childProcessExitCode);
+                                            });
+                                        }); };
+                                        return [2 /*return*/];
+                                }
+                            });
+                        });
+                    })();
+                    return [2 /*return*/];
+            }
+        });
+    }); };
+    var main_daemon = function () { return __awaiter(_this, void 0, void 0, function () {
+        var _a, launch, beforeExitTask;
+        var _this = this;
+        return __generator(this, function (_b) {
+            switch (_b.label) {
+                case 0: return [4 /*yield*/, daemonProcess()];
+                case 1:
+                    _a = _b.sent(), launch = _a.launch, beforeExitTask = _a.beforeExitTask;
+                    process.once("message", function () { return process.emit("beforeExit", process.exitCode = 0); });
+                    process.once("disconnect", function () { return process.exit(1); });
+                    setProcessExitHandler(function (exitCause) { return __awaiter(_this, void 0, void 0, function () {
+                        var error;
+                        return __generator(this, function (_a) {
+                            switch (_a.label) {
+                                case 0:
+                                    error = exitCause.type === "EXCEPTION" ? exitCause.error : undefined;
+                                    if (!!!beforeExitTask) return [3 /*break*/, 2];
+                                    return [4 /*yield*/, beforeExitTask(error)];
+                                case 1:
+                                    _a.sent();
+                                    _a.label = 2;
+                                case 2: return [2 /*return*/];
+                            }
+                        });
+                    }); }, (8 / 10) * stop_timeout, function (exitCause) { return exitCause.type !== "SIGNAL"; });
+                    launch();
+                    return [2 /*return*/];
+            }
+        });
+    }); };
+    if (!process.send) {
+        main_root(get_caller_file_path());
+    }
+    else {
+        main_daemon();
+    }
+}
+exports.createService = createService;
+/**
+ * Generate a systemd config file for a service created via "createService" function
+ */
+function makeSystemdConfigFile(main_js_path, node_path) {
+    if (node_path === void 0) { node_path = process.argv[0]; }
+    return [
+        "[Unit]",
+        "After=network.target",
+        "",
+        "[Service]",
+        "ExecStart=" + node_path + " " + main_js_path,
+        "StandardOutput=inherit",
+        "KillSignal=SIGUSR2",
+        "SendSIGKILL=no",
+        "",
+        "[Install]",
+        "WantedBy=multi-user.target",
+        ""
+    ].join("\n");
+}
+exports.makeSystemdConfigFile = makeSystemdConfigFile;

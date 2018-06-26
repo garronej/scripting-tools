@@ -413,7 +413,7 @@ export namespace apt_get_install {
 export function exit_if_not_root(): void {
     if (process.getuid() !== 0) {
 
-        console.log(colorize("Error: This script require root privilege", "RED"));
+        console.log(colorize("Error: root privilege required ", "RED"));
 
         process.exit(1);
 
@@ -791,6 +791,45 @@ export function createScript(
 
 }
 
+/** 
+ * 
+ * Let's say this function is called from
+ * f1 defined, if f1 is called by
+ * a line of code file.ts this function
+ * will return the path to file.ts.
+ * 
+ */
+export function get_caller_file_path(): string {
+
+    const originalFunc = Error.prepareStackTrace;
+
+    let callerFile;
+
+    try {
+
+        const error: any = new Error();
+
+        Error.prepareStackTrace = (_, stack) => stack; 
+
+        let currentFile = error.stack.shift().getFileName();
+
+        while (error.stack.length) {
+
+            callerFile = error.stack.shift().getFileName();
+
+            if (currentFile !== callerFile) {
+                break;
+            }
+
+        }
+    } catch { }
+
+    Error.prepareStackTrace = originalFunc;
+
+    return callerFile;
+
+}
+
 /**
  * 
  * Equivalent to the pattern $() in bash.
@@ -844,7 +883,7 @@ export function sh_if(cmd: string): boolean {
  * 
  * Allow to schedule action function to perform before exiting.
  * 
- * The action function will always be called before the process stop
+ * The task function will always be called before the process stop
  * unless process.exit is explicitly called somewhere or 
  * if the process receive any signal other * than the ones specified 
  * in the ExitCause.Signal["signal"] type.
@@ -855,57 +894,59 @@ export function sh_if(cmd: string): boolean {
  * 3) If a signal ( one of the handled ) is sent to the process.
  * 
  * To manually exit the process there is two option:
- * - Call process.exit(X) but action function will not be called.
+ * - Call process.exit(X) but the task function will not be called.
  * - Emit "beforeExit" on process object ( process.emit("beforeExit, process.exitCode= X) );
  *  Doing so you simulate 1st stop condition ( natural termination ).
  * 
  * To define the return code set process.exitCode. The exit code can be set
- * before emitting "beforeExit" or in the action function.
+ * before emitting "beforeExit" or in the task function.
  * If exitCode has not be defined the process 1 ( error ) will be used.
  * 
- * The action function can be synchronous or asynchronous.
- * The action function has [timeout] ms to complete.
+ * The task function can be synchronous or asynchronous.
+ * The task function has [timeout] ms to complete.
  * If it has not completed within this delay the process will
  * be terminated anyway.
  * WARNING: It is important not to perform sync operation that can 
- * hang for a long time in the action function ( e.g. execSync("sleep 1000"); ) 
+ * hang for a long time in the task function ( e.g. execSync("sleep 1000"); ) 
  * because while the sync operation are performed the timeout can't be triggered.
  * 
- * As soon as the action function is called all the other exitCause that 
- * may auccur will be ignored so that the action function have time to complete.
- * Anyway the action function is called only once.
+ * As soon as the task function is called all the other exitCause that 
+ * may auccur will be ignored so that the task function have time to complete.
+ * Anyway the task function is called only once.
  *
- * Whether the action function complete by successfully or throw
+ * Whether the task function complete by successfully or throw
  * an exception the process will terminate with exit code set 
  * in process.exitCode at the time of the completion.
  * 
- * (optional) if exitOnCause(exitCause) return false the action function
- * will not be called and the the process will continue as
- * if nothing happened.
+ * Provide shouldExitIf function to filter what should be 
+ * considered a case to terminate the process.
+ * Only exception and supported signals can be bypassed,
+ * Nothing else to do will always terminate the process.
+ * By default exiting on any signal or uncaught errors.
  *
  */
-export function setExitHandler(
-    action: (exitCause: setExitHandler.ExitCause) => any,
+export function setProcessExitHandler(
+    task: (exitCause: setProcessExitHandler.ExitCause) => any,
     timeout = 4000,
-    exitOnCause: (exitCause: Exclude<setExitHandler.ExitCause,setExitHandler.ExitCause.NothingElseToDo>)=> boolean= ()=> true
+    shouldExitIf: (exitCause: Exclude<setProcessExitHandler.ExitCause,setProcessExitHandler.ExitCause.NothingElseToDo>)=> boolean= ()=> true
 ) {
 
-    const log: typeof setExitHandler.log= (...args)=> setExitHandler.log(
+    const log: typeof setProcessExitHandler.log= (...args)=> setProcessExitHandler.log(
         `===exitHandler=== ${util.format.apply(util, args)}`
     );
 
-    let handler: (exitCause: setExitHandler.ExitCause) => any = async exitCause => {
+    let handler: (exitCause: setProcessExitHandler.ExitCause) => any = async exitCause => {
 
-        if (exitCause.type !== "NOTHING ELSE TO DO" && !exitOnCause(exitCause)) {
+        if (exitCause.type !== "NOTHING ELSE TO DO" && !shouldExitIf(exitCause)) {
 
-            log("prevent exit on cause", exitCause);
+            log("Choosing to not terminating the process despite: ", exitCause);
 
             return;
 
         }
 
         handler = exitCause => {
-            log("ignored extra exit cause", exitCause);
+            log("Ignored extra exit cause", exitCause);
             setTimeout(() => { }, 1000000);
         };
 
@@ -914,10 +955,10 @@ export function setExitHandler(
                 ? undefined : 1
         );
 
-        log("exit cause", exitCause);
+        log("Cause of process termination: ", exitCause);
 
         setTimeout(() => {
-            log("action function timeout");
+            log("Exit task timeout");
             process_exit();
         }, timeout);
 
@@ -925,11 +966,11 @@ export function setExitHandler(
 
         try {
 
-            actionOut = action(exitCause);
+            actionOut = task(exitCause);
 
         } catch(error){
 
-            log("action function thrown", error);
+            log("Exit task thrown error", error);
             process_exit();
             return;
 
@@ -943,7 +984,7 @@ export function setExitHandler(
 
             } catch(error){
 
-                log("action function rejected", error);
+                log("Exit task returned a promise that rejected", error);
 
                 process_exit();
                 return;
@@ -952,13 +993,13 @@ export function setExitHandler(
 
         }
 
-        log("action function complete success");
+        log("Exit task complete successfully.");
 
         process_exit();
 
     };
 
-    for (const signal of setExitHandler.ExitCause.Signal.list) {
+    for (const signal of setProcessExitHandler.ExitCause.Signal.list) {
 
         process.on(signal, () => handler({ "type": "SIGNAL", signal }));
 
@@ -975,7 +1016,7 @@ export function setExitHandler(
 
 }
 
-export namespace setExitHandler {
+export namespace setProcessExitHandler {
 
     export type ExitCause =
         ExitCause.Signal |
@@ -1030,28 +1071,39 @@ export function stopProcessSync(
     signal: NodeJS.Signals = "SIGUSR2"
 ) {
 
-    const log: typeof setExitHandler.log = (...args) => stopProcessSync.log(
+    const log: typeof setProcessExitHandler.log = (...args) => stopProcessSync.log(
         `===stopProcessSync=== ${util.format.apply(util,args)}`
     );
 
+    log(`Called on pidfile ${pidfile_path}...`);
+
     if (!stopProcessSync.isRunning(pidfile_path)) {
-        log("not running");
+        log("not running.");
         return;
     }
 
-    log(`sending signal ${signal}`);
+    log(`Sending signal ${signal}...`);
 
     execSyncNoCmdTrace(
         stopProcessSync.buildSendSignalCmd(pidfile_path, signal),
         { "stdio": "pipe" }
     );
 
+    let isFirstCheck= true;
+
     while (stopProcessSync.isRunning(pidfile_path)) {
-        log("waiting until process terminate...");
+
+        if( isFirstCheck ){
+            isFirstCheck= false;
+        }else{
+            log("Waiting for process to terminate.");
+        }
+
         execSyncNoCmdTrace("sleep 0.5", { "stdio": "pipe" });
+
     }
 
-    log("process terminated");
+    log("Process terminated.");
 
 }
 
@@ -1101,4 +1153,418 @@ export namespace stopProcessSync {
 
 }
 
+/**
+ * 
+ * Function to create the entry point (main.js) of a node service that can:
+ * -Restart on crash (without relying on systemd to do so).
+ * -Execute as specific unix user but can perform tasks as root before start.
+ * -Be stopped gracefully by sending USR2 signal on the root process ( identified by pidfile ).
+ * -Be started via a shell and gracefully stopped with CTRL-C (INT signal).
+ * -Ensure only one instance of the service run at the same time.
+ *      ( if at the time the main is called there is an other instance of the service
+ *      running it is gracefully terminated )
+ * -Ensure that the process will terminate in at most [ stop_timeout ] ms after 
+ *      receiving INT or USR2 signal. (default 5second)
+ * -Forward daemon process stdout to root process stdout.
+ * 
+ * =>stop_timeout: The maximum amount of time ( in ms ) the root process can 
+ * 
+ * => rootProcess function should return: 
+ * -pidfile_path: where to store the pid of the root process.
+ *      take to terminate after requested to exit gracefully.
+ * -isQuiet?: set to true to disable root process debug info logging on stdout. ( default false )
+ * -doForwardDaemonStdout?: set to true to forward everything the daemon 
+ *      process write to stdout to the root process stdout. ( default true )
+ * -daemon_unix_user?: User by who should be owned the daemon process. 
+ * -daemon_node_path?: Node.js executable that should be used to by the daemon process.
+ * -daemon_cwd?: working directory of the daemon process.
+ * -daemon_restart_after_crash_delay?: Delay in ms before creating a new fork of the daemon
+ * after a crash. If set to a negative number the daemon will not be restarted after it terminate restart. 
+ * The exit code of the main process will be the exit code of the daemon.
+ * Default to 500ms.
+ * -preForkTask: Task to perform before forking a daemon process.
+ *      It is called just before forking the daemon process. ( called again on every restart. )
+ *      If the function is async the daemon will not be forked until the returned promise resolve.
+ *      The function should never raise exception but if it does root process will exit with code 1.
+ *      (pidfile will be deleted)
+ *      If the function is async and if it need to spawn child processes then 
+ *      an implementation for terminateSubProcess ( passed as reference ) should be provided so that 
+ *      if when called it kill all the child processes then resolve once they are terminated.
+ *      The to which the promise resolve will be used as exit code for the root process.
+ *      Note that terminateSubProcess should never be called, it is a OUT parameter.
+ * 
+ * => daemonProcess function should return: 
+ * -launch: the function that the daemon process need to call to start the actual job that the service is meant to perform.
+ * -beforeExitTask: function that should be called before the daemon process exit. ( e.g. creating crash report ).
+ *      If the daemon process is terminating due to an error the error will be passed as argument.
+ *      There is two scenario that will led to this function NOT being called:
+ *      1)The daemon process receive KILL or other deadly signal that can't be overridden.
+ *      2)The root process terminate.
+ * 
+ * NOTE: If the root process receive a deadly signal other than INT, USR2 or HUP
+ * ( e.g. KILL or STOP ) the root and daemon processes will immediately terminate without 
+ * executing beforeExit tasks or removing pidfile.
+ * 
+ * If the daemon process is crashing over and over again the root process is eventually
+ * terminated.
+ * 
+ * The main.js must be called as root ( otherwise close with error message )
+ * 
+ */
+export function createService(params: {
+    stop_timeout?: number;
+    rootProcess(): Promise<{
+        pidfile_path: string;
+        isQuiet?: boolean;
+        doForwardDaemonStdout?: boolean;
+        daemon_unix_user?: string;
+        daemon_node_path?: string;
+        daemon_cwd?: string;
+        daemon_restart_after_crash_delay?: number;
+        preForkTask?: (
+            boxedTerminateSubProcesses: { terminateSubProcesses?: ()=> Promise<number> }
+        )=> Promise<void> | void;
+    }>,
+    daemonProcess(): Promise<{
+        launch(): any;
+        beforeExitTask?: (error: Error | undefined )=> Promise<void>;
+    }>,
+}) {
 
+    const { 
+        rootProcess, 
+        daemonProcess,
+        stop_timeout: _stop_timeout,
+    }= params;
+
+    const stop_timeout = _stop_timeout || 5000;
+
+    const main_root = async (main_js_path: string) => {
+
+        exit_if_not_root();
+
+        const {
+            pidfile_path,
+            isQuiet,
+            doForwardDaemonStdout: _doForwardDaemonStdout,
+            daemon_unix_user,
+            daemon_node_path,
+            daemon_cwd,
+            daemon_restart_after_crash_delay: _daemon_restart_after_crash_delay,
+            preForkTask,
+        } = await rootProcess();
+
+
+        const doForwardDaemonStdout= 
+            _doForwardDaemonStdout === undefined ? 
+            true : _doForwardDaemonStdout;
+
+        const daemon_restart_after_crash_delay =
+            _daemon_restart_after_crash_delay !== undefined ?
+                _daemon_restart_after_crash_delay : 500;
+
+        let log: typeof console.log = !isQuiet ?
+            ((...args) => process.stdout.write(
+                Buffer.from(`(root process) ${util.format.apply(util, args)}\n`, "utf8")
+            )) : 
+            (() => { });
+
+
+        stopProcessSync.log = log;
+
+        stopProcessSync(pidfile_path, "SIGUSR2");
+
+        if (fs.existsSync(pidfile_path)) {
+            throw Error("Other instance launched simultaneously");
+        }
+
+        fs.writeFileSync(pidfile_path, process.pid.toString());
+
+        log(`PID: ${process.pid}`);
+
+        const boxedTerminateSubProcesses: { terminateSubProcesses?: ()=> Promise<number> } = {};
+
+        let isTerminating = false;
+
+        setProcessExitHandler(async exitCause => {
+
+            isTerminating= true;
+
+            let childProcessExitCode: number | undefined;
+
+            const { terminateSubProcesses } = boxedTerminateSubProcesses;
+
+            if (!!terminateSubProcesses) {
+
+                try {
+
+
+                    childProcessExitCode = await Promise.race([
+                        new Promise<never>(
+                            (_, reject) => setTimeout(
+                                () => reject(new Error("TerminateSubprocess took too long to resolve")),
+                                (16 / 17) * stop_timeout
+                            )
+                        ),
+                        terminateSubProcesses()
+                    ]);
+
+
+                } catch (error) {
+
+                    log("terminateSubProcess error", error);
+
+                    childProcessExitCode = 1;
+
+                }
+
+            }else{
+
+                childProcessExitCode= undefined;
+
+            }
+
+            if (exitCause.type === "EXCEPTION") {
+
+                process.exitCode = 1;
+
+            } else if (childProcessExitCode !== undefined) {
+
+                process.exitCode = childProcessExitCode;
+
+            } else {
+
+                process.exitCode = 0;
+
+            }
+
+            fs.unlinkSync(pidfile_path);
+
+            log("pidfile deleted");
+
+        }, stop_timeout);
+
+        setProcessExitHandler.log = log;
+
+        let max_consecutive_restart = 3;
+        let restart_attempt_remaining = max_consecutive_restart;
+
+        let reset_restart_attempt_timer: NodeJS.Timer = undefined as any;
+
+        (async function callee() {
+
+            clearTimeout(reset_restart_attempt_timer);
+
+            if (!!preForkTask) {
+
+                log("performing pre fork tasks...");
+
+                try {
+
+                    await preForkTask(boxedTerminateSubProcesses);
+
+                } catch (error) {
+
+                    log("PreFork function raised an exception ( altho it should not have! ) ");
+
+                    throw error;
+
+                }
+
+            }
+
+
+            if (isTerminating) {
+                return;
+            }
+
+            log("Forking daemon process now.");
+
+            reset_restart_attempt_timer = setTimeout(() => restart_attempt_remaining = max_consecutive_restart, 10000);
+
+            const daemonProcess = child_process.fork(
+                main_js_path,
+                [],
+                {
+                    "uid": daemon_unix_user ? get_uid(daemon_unix_user) : undefined,
+                    "gid": daemon_unix_user ? get_gid(daemon_unix_user) : undefined,
+                    "silent": true,
+                    "cwd": daemon_cwd,
+                    "execPath": daemon_node_path
+                }
+            );
+
+            daemonProcess.once("error", error => {
+
+                if (isTerminating) {
+                    return;
+                }
+
+                log([
+                    `Error evt emitted by daemon process which mean that: `,
+                    `The process could not be spawned, or`,
+                    `The process could not be killed, or`,
+                    `Sending a message to the child process failed.`
+                ].join("\n"));
+
+
+                throw error;
+
+            });
+
+            if (doForwardDaemonStdout) {
+
+                daemonProcess.stdout.on("data", data => 
+                    process.stdout.write(data)
+                );
+
+            }
+
+            daemonProcess.once("close", (childProcessExitCode: number | null) => {
+
+                if (isTerminating) {
+                    return;
+                }
+
+                delete boxedTerminateSubProcesses.terminateSubProcesses;
+
+                log(`Daemon process exited unexpectedly`);
+
+                if (daemon_restart_after_crash_delay < 0) {
+
+
+                    if (childProcessExitCode === null) {
+                        childProcessExitCode = 1;
+                    }
+
+                    log(`Daemon will not be restarted ( exit code : ${childProcessExitCode} ) `);
+
+                    boxedTerminateSubProcesses.terminateSubProcesses= ()=> Promise.resolve(childProcessExitCode!);
+
+                    clearTimeout(reset_restart_attempt_timer);
+
+                    return;
+
+                }
+
+                if (restart_attempt_remaining-- === 0) {
+                    
+                    throw new Error("Daemon is crashing over and over");
+
+                }
+                
+
+                log(`Will be restarted ( attempt remaining: ${restart_attempt_remaining} )`);
+
+                setTimeout(() => callee(), daemon_restart_after_crash_delay);
+
+            });
+
+
+            boxedTerminateSubProcesses.terminateSubProcesses = () => new Promise<number>(resolve => {
+
+                log("Attempt to gracefully terminate daemon process...");
+
+                daemonProcess.send(null);
+
+                daemonProcess.removeAllListeners("close");
+
+                let isKilled = false;
+
+                const timer = setTimeout(() => {
+
+                    isKilled = true;
+
+                    log("Daemon process not responding, sending KILL signal...");
+
+                    daemonProcess.kill("SIGKILL")
+
+                }, (9 / 10) * stop_timeout);
+
+                daemonProcess.once("close", (childProcessExitCode: number | null) => {
+
+                    if (typeof childProcessExitCode !== "number" || isNaN(childProcessExitCode)) {
+                        childProcessExitCode = isKilled ? 1 : 0;
+                    }
+
+                    log(`Daemon process exited with code ${childProcessExitCode}`);
+
+                    clearTimeout(timer);
+
+                    resolve(childProcessExitCode);
+
+                });
+
+            });
+
+
+        })();
+
+    }
+
+    const main_daemon = async () => {
+
+        const { launch, beforeExitTask } = await daemonProcess();
+
+        process.once("message", () => process.emit("beforeExit", process.exitCode = 0));
+
+        process.once("disconnect", () => process.exit(1));
+
+
+        setProcessExitHandler(
+            async exitCause => {
+
+                const error = exitCause.type === "EXCEPTION" ? exitCause.error : undefined;
+
+                if (!!beforeExitTask) {
+
+                    await beforeExitTask(error);
+
+                }
+
+            },
+            (8 / 10) * stop_timeout,
+            exitCause => exitCause.type !== "SIGNAL"
+        );
+
+        launch();
+
+    };
+
+    if (!process.send) {
+
+        main_root(get_caller_file_path());
+
+    } else {
+
+        main_daemon();
+
+    }
+
+}
+
+
+/**
+ * Generate a systemd config file for a service created via "createService" function
+ */
+export function makeSystemdConfigFile(
+    main_js_path: string,
+    node_path: string = process.argv[0]
+): string {
+
+    return [
+        `[Unit]`,
+        `After=network.target`,
+        ``,
+        `[Service]`,
+        `ExecStart=${node_path} ${main_js_path}`,
+        `StandardOutput=inherit`,
+        `KillSignal=SIGUSR2`,
+        `SendSIGKILL=no`,
+        ``,
+        `[Install]`,
+        `WantedBy=multi-user.target`,
+        ``
+    ].join("\n");
+
+}
