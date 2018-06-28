@@ -654,6 +654,17 @@ function createScript(file_path, content) {
     execSyncNoCmdTrace("chmod +x " + file_path);
 }
 exports.createScript = createScript;
+var unixUser;
+(function (unixUser) {
+    function create(unix_user, home_dir_path) {
+        execSyncNoCmdTrace("useradd -M " + unix_user + " -s /bin/false -d " + home_dir_path);
+    }
+    unixUser.create = create;
+    function remove(unix_user) {
+        execSyncNoCmdTrace("userdel " + unix_user, { "stdio": "pipe" });
+    }
+    unixUser.remove = remove;
+})(unixUser = exports.unixUser || (exports.unixUser = {}));
 var get_caller_file_path_1 = require("./get_caller_file_path");
 exports.get_caller_file_path = get_caller_file_path_1.get_caller_file_path;
 var get_caller_file_path_2 = require("./get_caller_file_path");
@@ -1323,51 +1334,56 @@ function createService(params) {
     }
 }
 exports.createService = createService;
-/**
- * Generate a systemd config file for a service created via "createService" function
- */
-function systemd_createConfigFile(srv_name, main_js_path, node_path, enable, start) {
-    if (node_path === void 0) { node_path = process.argv[0]; }
-    if (enable === void 0) { enable = "ENABLE"; }
-    if (start === void 0) { start = "START"; }
-    fs.writeFileSync(systemd_createConfigFile.mkPath(srv_name), Buffer.from([
-        "[Unit]",
-        "After=network.target",
-        "",
-        "[Service]",
-        "ExecStart=" + node_path + " " + main_js_path,
-        "StandardOutput=inherit",
-        "KillSignal=SIGUSR2",
-        "SendSIGKILL=no",
-        "Environment=NODE_ENV=production",
-        "",
-        "[Install]",
-        "WantedBy=multi-user.target",
-        ""
-    ].join("\n"), "utf8"));
-    execSyncNoCmdTrace("systemctl daemon-reload");
-    if (!!enable) {
-        execSyncNoCmdTrace("systemctl enable " + srv_name, { "stdio": "pipe" });
+var systemd;
+(function (systemd) {
+    /**
+     * Generate a systemd config file for a service created via "createService" function
+     * enable by default, start by default.
+     */
+    function createConfigFile(srv_name, main_js_path, node_path, enable, start) {
+        if (node_path === void 0) { node_path = process.argv[0]; }
+        if (enable === void 0) { enable = "ENABLE"; }
+        if (start === void 0) { start = "START"; }
+        fs.writeFileSync(systemd_createConfigFile.mkPath(srv_name), Buffer.from([
+            "[Unit]",
+            "After=network.target",
+            "",
+            "[Service]",
+            "ExecStart=" + node_path + " " + main_js_path,
+            "StandardOutput=inherit",
+            "KillSignal=SIGUSR2",
+            "SendSIGKILL=no",
+            "Environment=NODE_ENV=production",
+            "",
+            "[Install]",
+            "WantedBy=multi-user.target",
+            ""
+        ].join("\n"), "utf8"));
+        execSyncNoCmdTrace("systemctl daemon-reload");
+        if (!!enable) {
+            execSyncNoCmdTrace("systemctl enable " + srv_name, { "stdio": "pipe" });
+        }
+        if (!!start) {
+            execSyncNoCmdTrace("systemctl start " + srv_name);
+        }
     }
-    if (!!start) {
-        execSyncNoCmdTrace("systemctl start " + srv_name);
+    systemd.createConfigFile = createConfigFile;
+    var systemd_createConfigFile;
+    (function (systemd_createConfigFile) {
+        systemd_createConfigFile.mkPath = function (srv_name) { return "/etc/systemd/system/" + srv_name + ".service"; };
+    })(systemd_createConfigFile = systemd.systemd_createConfigFile || (systemd.systemd_createConfigFile = {}));
+    /** Remove config file disable and reload daemon, never throw, stop is false by default */
+    function deleteConfigFile(srv_name, stop) {
+        if (stop === void 0) { stop = false; }
+        if (!!stop) {
+            execSyncNoCmdTrace("systemctl stop " + srv_name + " || true", { "stdio": "pipe" });
+        }
+        execSyncNoCmdTrace("systemctl disable " + srv_name + " || true");
+        try {
+            fs.unlinkSync(systemd_createConfigFile.mkPath(srv_name));
+        }
+        catch (_a) { }
+        execSyncNoCmdTrace("systemctl daemon-reload || true", { "stdio": "pipe" });
     }
-}
-exports.systemd_createConfigFile = systemd_createConfigFile;
-(function (systemd_createConfigFile) {
-    systemd_createConfigFile.mkPath = function (srv_name) { return "/etc/systemd/system/" + srv_name + ".service"; };
-})(systemd_createConfigFile = exports.systemd_createConfigFile || (exports.systemd_createConfigFile = {}));
-/** Remove config file disable and reload daemon, never throw */
-function systemd_deleteConfigFile(srv_name, stop) {
-    if (stop === void 0) { stop = false; }
-    if (!!stop) {
-        execSyncNoCmdTrace("systemctl stop " + srv_name + " || true", { "stdio": "pipe" });
-    }
-    execSyncNoCmdTrace("systemctl disable " + srv_name + " || true");
-    try {
-        fs.unlinkSync(systemd_createConfigFile.mkPath(srv_name));
-    }
-    catch (_a) { }
-    execSyncNoCmdTrace("systemctl daemon-reload || true", { "stdio": "pipe" });
-}
-exports.systemd_deleteConfigFile = systemd_deleteConfigFile;
+    systemd.deleteConfigFile = deleteConfigFile;
+})(systemd = exports.systemd || (exports.systemd = {}));

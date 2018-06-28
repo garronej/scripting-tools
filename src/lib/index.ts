@@ -792,6 +792,24 @@ export function createScript(
 
 }
 
+
+
+export namespace unixUser {
+
+    export function create(unix_user: string, home_dir_path: string) {
+
+        execSyncNoCmdTrace(`useradd -M ${unix_user} -s /bin/false -d ${home_dir_path}`);
+
+    }
+
+    export function remove(unix_user) {
+
+        execSyncNoCmdTrace(`userdel ${unix_user}`, { "stdio": "pipe" });
+
+    }
+
+}
+
 export { get_caller_file_path } from "./get_caller_file_path";
 import { get_caller_file_path } from "./get_caller_file_path";
 
@@ -1677,72 +1695,78 @@ export function createService(params: {
 
 }
 
-/**
- * Generate a systemd config file for a service created via "createService" function
- */
-export function systemd_createConfigFile(
-    srv_name: string,
-    main_js_path: string,
-    node_path: string = process.argv[0],
-    enable: "ENABLE" | false = "ENABLE",
-    start: "START" | false = "START"
-) {
+export namespace systemd {
 
-    fs.writeFileSync(
-        systemd_createConfigFile.mkPath(srv_name),
-        Buffer.from([
-            `[Unit]`,
-            `After=network.target`,
-            ``,
-            `[Service]`,
-            `ExecStart=${node_path} ${main_js_path}`,
-            `StandardOutput=inherit`,
-            `KillSignal=SIGUSR2`,
-            `SendSIGKILL=no`,
-            `Environment=NODE_ENV=production`,
-            ``,
-            `[Install]`,
-            `WantedBy=multi-user.target`,
-            ``
-        ].join("\n"), "utf8")
-    );
+    /**
+     * Generate a systemd config file for a service created via "createService" function
+     * enable by default, start by default.
+     */
+    export function createConfigFile(
+        srv_name: string,
+        main_js_path: string,
+        node_path: string = process.argv[0],
+        enable: "ENABLE" | false = "ENABLE",
+        start: "START" | false = "START"
+    ) {
 
-    execSyncNoCmdTrace("systemctl daemon-reload");
+        fs.writeFileSync(
+            systemd_createConfigFile.mkPath(srv_name),
+            Buffer.from([
+                `[Unit]`,
+                `After=network.target`,
+                ``,
+                `[Service]`,
+                `ExecStart=${node_path} ${main_js_path}`,
+                `StandardOutput=inherit`,
+                `KillSignal=SIGUSR2`,
+                `SendSIGKILL=no`,
+                `Environment=NODE_ENV=production`,
+                ``,
+                `[Install]`,
+                `WantedBy=multi-user.target`,
+                ``
+            ].join("\n"), "utf8")
+        );
 
-    if (!!enable) {
+        execSyncNoCmdTrace("systemctl daemon-reload");
 
-        execSyncNoCmdTrace(`systemctl enable ${srv_name}`, { "stdio": "pipe" });
+        if (!!enable) {
+
+            execSyncNoCmdTrace(`systemctl enable ${srv_name}`, { "stdio": "pipe" });
+
+        }
+
+        if (!!start) {
+
+            execSyncNoCmdTrace(`systemctl start ${srv_name}`);
+
+        }
 
     }
 
-    if (!!start) {
+    export namespace systemd_createConfigFile {
 
-        execSyncNoCmdTrace(`systemctl start ${srv_name}`);
+        export const mkPath = (srv_name: string) => `/etc/systemd/system/${srv_name}.service`;
+
+    }
+
+    /** Remove config file disable and reload daemon, never throw, stop is false by default */
+    export function deleteConfigFile(srv_name: string, stop: false | "STOP" = false) {
+
+        if (!!stop) {
+
+            execSyncNoCmdTrace(`systemctl stop ${srv_name} || true`, { "stdio": "pipe" });
+
+        }
+
+        execSyncNoCmdTrace(`systemctl disable ${srv_name} || true`);
+
+        try { fs.unlinkSync(systemd_createConfigFile.mkPath(srv_name)); } catch{ }
+
+        execSyncNoCmdTrace("systemctl daemon-reload || true", { "stdio": "pipe" });
 
     }
 
 }
 
-export namespace systemd_createConfigFile {
-
-    export const mkPath = (srv_name: string) => `/etc/systemd/system/${srv_name}.service`;
-
-}
-
-/** Remove config file disable and reload daemon, never throw */
-export function systemd_deleteConfigFile(srv_name: string, stop: "STOP" | false = false) {
-
-    if (!!stop) {
-
-        execSyncNoCmdTrace(`systemctl stop ${srv_name} || true`, { "stdio": "pipe" });
-
-    }
-
-    execSyncNoCmdTrace(`systemctl disable ${srv_name} || true`);
-
-    try { fs.unlinkSync(systemd_createConfigFile.mkPath(srv_name)); } catch{ }
-
-    execSyncNoCmdTrace("systemctl daemon-reload || true", { "stdio": "pipe" });
-
-}
 

@@ -174,6 +174,10 @@ export declare function fs_ls(dir_path: string, mode?: "FILENAME" | "ABSOLUTE PA
 export declare function createSymlink(src_path: string, dst_path: string): void;
 /** Create a executable file */
 export declare function createScript(file_path: string, content: string): void;
+export declare namespace unixUser {
+    function create(unix_user: string, home_dir_path: string): void;
+    function remove(unix_user: any): void;
+}
 export { get_caller_file_path } from "./get_caller_file_path";
 /**
  *
@@ -393,12 +397,15 @@ export declare function createService(params: {
         beforeExitTask?: (error: Error | undefined) => Promise<void>;
     }>;
 }): void;
-/**
- * Generate a systemd config file for a service created via "createService" function
- */
-export declare function systemd_createConfigFile(srv_name: string, main_js_path: string, node_path?: string, enable?: "ENABLE" | false, start?: "START" | false): void;
-export declare namespace systemd_createConfigFile {
-    const mkPath: (srv_name: string) => string;
+export declare namespace systemd {
+    /**
+     * Generate a systemd config file for a service created via "createService" function
+     * enable by default, start by default.
+     */
+    function createConfigFile(srv_name: string, main_js_path: string, node_path?: string, enable?: "ENABLE" | false, start?: "START" | false): void;
+    namespace systemd_createConfigFile {
+        const mkPath: (srv_name: string) => string;
+    }
+    /** Remove config file disable and reload daemon, never throw, stop is false by default */
+    function deleteConfigFile(srv_name: string, stop?: false | "STOP"): void;
 }
-/** Remove config file disable and reload daemon, never throw */
-export declare function systemd_deleteConfigFile(srv_name: string, stop?: "STOP" | false): void;
