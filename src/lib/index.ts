@@ -1156,7 +1156,7 @@ export namespace stopProcessSync {
  * -pidfile_path: where to store the pid of the root process.
  *      take to terminate after requested to exit gracefully.
  * -stop_timeout: The maximum amount of time ( in ms ) the the root process 
- *      is allowed to take for terminating.
+ *      is allowed to take for terminating. Defaults to 5000ms.
  * -assert_unix_user: enforce that the main be called by a specific user.
  * -isQuiet?: set to true to disable root process debug info logging on stdout. ( default false )
  * -doForwardDaemonStdout?: set to true to forward everything the daemon 
@@ -1295,13 +1295,23 @@ export function createService(params: {
             throw Error("Other instance launched simultaneously");
         }
 
-        fs.writeFileSync(pidfile_path, process.pid.toString());
+        (function createPidfile() {
+
+            const pidfile_dir_path = path.dirname(pidfile_path);
+
+            if (!fs.existsSync(pidfile_dir_path)) {
+                execSyncNoCmdTrace(`mkdir -p ${pidfile_dir_path}`);
+            }
+
+            fs.writeFileSync(pidfile_path, process.pid.toString());
+
+        })()
 
         log(`PID: ${process.pid}`);
 
         type DaemonContext = {
             daemonProcess: child_process.ChildProcess | undefined;
-            terminatePreForkChildProcesses: ({ impl: ()=>Promise<void>; })
+            terminatePreForkChildProcesses: ({ impl: () => Promise<void>; })
             restart_attempt_remaining: number;
             reset_restart_attempt_timer: NodeJS.Timer;
         };
@@ -1315,9 +1325,9 @@ export function createService(params: {
                         index + 1,
                         {
                             "daemonProcess": undefined,
-                            "terminatePreForkChildProcesses": { "impl": ()=> Promise.resolve() },
+                            "terminatePreForkChildProcesses": { "impl": () => Promise.resolve() },
                             "restart_attempt_remaining": max_consecutive_restart,
-                            "reset_restart_attempt_timer": setTimeout(()=>{},0)
+                            "reset_restart_attempt_timer": setTimeout(() => { }, 0)
                         }
                     ];
 
@@ -1434,7 +1444,7 @@ export function createService(params: {
 
             })();
 
-            
+
             if (exitCause.type === "EXCEPTION") {
                 /*
                  preForkTask throw or daemonProcess emit error or 
@@ -1505,7 +1515,7 @@ export function createService(params: {
 
                 }
 
-                context.terminatePreForkChildProcesses.impl= ()=> Promise.resolve();
+                context.terminatePreForkChildProcesses.impl = () => Promise.resolve();
 
             }
 

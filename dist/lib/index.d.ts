@@ -320,7 +320,7 @@ export declare namespace stopProcessSync {
  * -pidfile_path: where to store the pid of the root process.
  *      take to terminate after requested to exit gracefully.
  * -stop_timeout: The maximum amount of time ( in ms ) the the root process
- *      is allowed to take for terminating.
+ *      is allowed to take for terminating. Defaults to 5000ms.
  * -assert_unix_user: enforce that the main be called by a specific user.
  * -isQuiet?: set to true to disable root process debug info logging on stdout. ( default false )
  * -doForwardDaemonStdout?: set to true to forward everything the daemon
@@ -346,8 +346,6 @@ export declare namespace stopProcessSync {
  *      if when called it kill all the child processes then resolve once they are terminated.
  *      The to which the promise resolve will be used as exit code for the root process.
  *      Note that terminateSubProcess should never be called, it is a OUT parameter.
- *
- *
  *
  * => daemonProcess
  * It should return:

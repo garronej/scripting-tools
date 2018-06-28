@@ -8,7 +8,7 @@ scriptLib.createService({
         const util = await import("util");
 
         return {
-            "pidfile_path": path.join(__dirname, "pid"),
+            "pidfile_path": path.join(__dirname, "run" ,"pid"),
             "stop_timeout": 5678,
             "isQuiet": false,
             "assert_unix_user": "root",

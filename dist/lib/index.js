@@ -948,7 +948,7 @@ exports.stopProcessSync = stopProcessSync;
  * -pidfile_path: where to store the pid of the root process.
  *      take to terminate after requested to exit gracefully.
  * -stop_timeout: The maximum amount of time ( in ms ) the the root process
- *      is allowed to take for terminating.
+ *      is allowed to take for terminating. Defaults to 5000ms.
  * -assert_unix_user: enforce that the main be called by a specific user.
  * -isQuiet?: set to true to disable root process debug info logging on stdout. ( default false )
  * -doForwardDaemonStdout?: set to true to forward everything the daemon
@@ -974,8 +974,6 @@ exports.stopProcessSync = stopProcessSync;
  *      if when called it kill all the child processes then resolve once they are terminated.
  *      The to which the promise resolve will be used as exit code for the root process.
  *      Note that terminateSubProcess should never be called, it is a OUT parameter.
- *
- *
  *
  * => daemonProcess
  * It should return:
@@ -1041,7 +1039,13 @@ function createService(params) {
                     if (fs.existsSync(pidfile_path)) {
                         throw Error("Other instance launched simultaneously");
                     }
-                    fs.writeFileSync(pidfile_path, process.pid.toString());
+                    (function createPidfile() {
+                        var pidfile_dir_path = path.dirname(pidfile_path);
+                        if (!fs.existsSync(pidfile_dir_path)) {
+                            execSyncNoCmdTrace("mkdir -p " + pidfile_dir_path);
+                        }
+                        fs.writeFileSync(pidfile_path, process.pid.toString());
+                    })();
                     log("PID: " + process.pid);
                     daemonContexts = new Map((new Array(daemon_count))
                         .fill(null)
