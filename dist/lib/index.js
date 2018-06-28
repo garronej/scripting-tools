@@ -52,6 +52,26 @@ var __values = (this && this.__values) || function (o) {
         }
     };
 };
+var __read = (this && this.__read) || function (o, n) {
+    var m = typeof Symbol === "function" && o[Symbol.iterator];
+    if (!m) return o;
+    var i = m.call(o), r, ar = [], e;
+    try {
+        while ((n === void 0 || n-- > 0) && !(r = i.next()).done) ar.push(r.value);
+    }
+    catch (error) { e = { error: error }; }
+    finally {
+        try {
+            if (r && !r.done && (m = i["return"])) m.call(i);
+        }
+        finally { if (e) throw e.error; }
+    }
+    return ar;
+};
+var __spread = (this && this.__spread) || function () {
+    for (var ar = [], i = 0; i < arguments.length; i++) ar = ar.concat(__read(arguments[i]));
+    return ar;
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 var child_process = require("child_process");
 var readline = require("readline");
@@ -60,6 +80,7 @@ var path = require("path");
 var https = require("https");
 var http = require("http");
 var util = require("util");
+var os = require("os");
 /**
  * After this function is called every call to execSync
  * or exec will print the unix commands being executed.
@@ -917,23 +938,32 @@ exports.stopProcessSync = stopProcessSync;
  *      running it is gracefully terminated )
  * -Ensure that the process will terminate in at most [ stop_timeout ] ms after
  *      receiving INT or USR2 signal. (default 5second)
- * -Forward daemon process stdout to root process stdout.
+ * -Forward daemon processes stdout to root process stdout.
+ * -Can fork multiple daemon process.
  *
- * =>stop_timeout: The maximum amount of time ( in ms ) the root process can
+ * The root process forward command line arguments and environnement variable to
+ * the daemon processes.
  *
  * => rootProcess function should return:
  * -pidfile_path: where to store the pid of the root process.
  *      take to terminate after requested to exit gracefully.
+ * -stop_timeout: The maximum amount of time ( in ms ) the the root process
+ *      is allowed to take for terminating.
+ * -assert_unix_user: enforce that the main be called by a specific user.
  * -isQuiet?: set to true to disable root process debug info logging on stdout. ( default false )
  * -doForwardDaemonStdout?: set to true to forward everything the daemon
  *      process write to stdout to the root process stdout. ( default true )
- * -daemon_unix_user?: User by who should be owned the daemon process.
+ * -daemon_unix_user?: User who should own the daemon process.
  * -daemon_node_path?: Node.js executable that should be used to by the daemon process.
  * -daemon_cwd?: working directory of the daemon process.
- * -daemon_restart_after_crash_delay?: Delay in ms before creating a new fork of the daemon
- * after a crash. If set to a negative number the daemon will not be restarted after it terminate restart.
- * The exit code of the main process will be the exit code of the daemon.
- * Default to 500ms.
+ * -daemon_restart_after_crash_delay?: ( Default to 500ms. )Delay in ms before restarting the daemon
+ *      after it terminate without being requested to. If set to a negative number the daemons
+ *      will not be restarted after it terminate for the first time and :
+ *      If a daemon process exited with 0 and there is no other daemon process the root process
+ *      will end with a clean exit code.
+ *      If any of the daemon exit with an unclean code the root process will be terminated with an error code
+ *      even if there is some other daemon running.
+ * -daemon_count: Number of instance of daemon process that should be forked, default 1.
  * -preForkTask: Task to perform before forking a daemon process.
  *      It is called just before forking the daemon process. ( called again on every restart. )
  *      If the function is async the daemon will not be forked until the returned promise resolve.
@@ -945,13 +975,18 @@ exports.stopProcessSync = stopProcessSync;
  *      The to which the promise resolve will be used as exit code for the root process.
  *      Note that terminateSubProcess should never be called, it is a OUT parameter.
  *
- * => daemonProcess function should return:
+ *
+ *
+ * => daemonProcess
+ * It should return:
  * -launch: the function that the daemon process need to call to start the actual job that the service is meant to perform.
  * -beforeExitTask: function that should be called before the daemon process exit. ( e.g. creating crash report ).
  *      If the daemon process is terminating due to an error the error will be passed as argument.
  *      There is two scenario that will led to this function NOT being called:
  *      1)The daemon process receive KILL or other deadly signal that can't be overridden.
  *      2)The root process terminate.
+ * daemon_number represent the instance index of the daemon among the total of [damon_count] process forked.
+ * It can be user to use a different logfile for each daemon process instance.
  *
  * NOTE: If the root process receive a deadly signal other than INT, USR2 or HUP
  * ( e.g. KILL or STOP ) the root and daemon processes will immediately terminate without
@@ -960,33 +995,38 @@ exports.stopProcessSync = stopProcessSync;
  * NOTE: because setting listener on "message" and "disconnect" process event prevent the
  * thread from terminating naturally where is nothing more to do if you wish to manually
  * terminate the daemon process without termination being requested from the parent you can:
- *        1) emit "beforeExit" on process
+ *        1) emit "beforeExit" on process setting the desired exit code ( process.emit("beforeExit", process.exitCode= X);
  *        2) throw an exception.
  *
- * If the daemon process is crashing over and over again the root process is eventually
- * terminated.
- *
- * The main.js must be called as root ( otherwise close with error message )
+ * If once of the daemon process is crashing over and over again the root process will eventually
+ * be terminated to prevent waisting host resources.
  *
  */
 function createService(params) {
     var _this = this;
-    var rootProcess = params.rootProcess, daemonProcess = params.daemonProcess, _stop_timeout = params.stop_timeout;
-    var stop_timeout = _stop_timeout || 5000;
+    var max_consecutive_restart = 300;
+    var rootProcess = params.rootProcess, daemonProcess = params.daemonProcess;
     var main_root = function (main_js_path) { return __awaiter(_this, void 0, void 0, function () {
-        var _a, pidfile_path, isQuiet, _doForwardDaemonStdout, daemon_unix_user, daemon_node_path, daemon_cwd, _daemon_restart_after_crash_delay, preForkTask, doForwardDaemonStdout, daemon_restart_after_crash_delay, log, boxedTerminateSubProcesses, isTerminating, max_consecutive_restart, restart_attempt_remaining, reset_restart_attempt_timer;
+        var _a, pidfile_path, _stop_timeout, assert_unix_user, isQuiet, _doForwardDaemonStdout, daemon_unix_user, daemon_node_path, daemon_cwd, _daemon_restart_after_crash_delay, preForkTask, _daemon_count, stop_timeout, doForwardDaemonStdout, daemon_restart_after_crash_delay, daemon_count, log, daemonContexts, isTerminating, args, makeForkOptions, forkDaemon, daemon_number;
         var _this = this;
         return __generator(this, function (_b) {
             switch (_b.label) {
-                case 0:
-                    exit_if_not_root();
-                    return [4 /*yield*/, rootProcess()];
+                case 0: return [4 /*yield*/, rootProcess()];
                 case 1:
-                    _a = _b.sent(), pidfile_path = _a.pidfile_path, isQuiet = _a.isQuiet, _doForwardDaemonStdout = _a.doForwardDaemonStdout, daemon_unix_user = _a.daemon_unix_user, daemon_node_path = _a.daemon_node_path, daemon_cwd = _a.daemon_cwd, _daemon_restart_after_crash_delay = _a.daemon_restart_after_crash_delay, preForkTask = _a.preForkTask;
-                    doForwardDaemonStdout = _doForwardDaemonStdout === undefined ?
-                        true : _doForwardDaemonStdout;
+                    _a = _b.sent(), pidfile_path = _a.pidfile_path, _stop_timeout = _a.stop_timeout, assert_unix_user = _a.assert_unix_user, isQuiet = _a.isQuiet, _doForwardDaemonStdout = _a.doForwardDaemonStdout, daemon_unix_user = _a.daemon_unix_user, daemon_node_path = _a.daemon_node_path, daemon_cwd = _a.daemon_cwd, _daemon_restart_after_crash_delay = _a.daemon_restart_after_crash_delay, preForkTask = _a.preForkTask, _daemon_count = _a.daemon_count;
+                    stop_timeout = _stop_timeout !== undefined ?
+                        _stop_timeout : 5000;
+                    doForwardDaemonStdout = _doForwardDaemonStdout !== undefined ?
+                        _doForwardDaemonStdout : true;
                     daemon_restart_after_crash_delay = _daemon_restart_after_crash_delay !== undefined ?
                         _daemon_restart_after_crash_delay : 500;
+                    daemon_count = _daemon_count !== undefined ?
+                        _daemon_count : 1;
+                    if (assert_unix_user !== undefined && os.userInfo().username !== assert_unix_user) {
+                        console.log(colorize("Must be run as " + assert_unix_user, "RED"));
+                        process.exit(1);
+                        return [2 /*return*/];
+                    }
                     log = !isQuiet ?
                         (function () {
                             var args = [];
@@ -1003,44 +1043,124 @@ function createService(params) {
                     }
                     fs.writeFileSync(pidfile_path, process.pid.toString());
                     log("PID: " + process.pid);
-                    boxedTerminateSubProcesses = {};
+                    daemonContexts = new Map((new Array(daemon_count))
+                        .fill(null)
+                        .map(function (_, index) {
+                        var context = [
+                            index + 1,
+                            {
+                                "daemonProcess": undefined,
+                                "terminatePreForkChildProcesses": { "impl": function () { return Promise.resolve(); } },
+                                "restart_attempt_remaining": max_consecutive_restart,
+                                "reset_restart_attempt_timer": setTimeout(function () { }, 0)
+                            }
+                        ];
+                        return context;
+                    }));
                     isTerminating = false;
                     setProcessExitHandler(function (exitCause) { return __awaiter(_this, void 0, void 0, function () {
-                        var childProcessExitCode, terminateSubProcesses, error_5;
+                        var childProcessExitCode;
                         return __generator(this, function (_a) {
                             switch (_a.label) {
                                 case 0:
                                     isTerminating = true;
-                                    terminateSubProcesses = boxedTerminateSubProcesses.terminateSubProcesses;
-                                    if (!!!terminateSubProcesses) return [3 /*break*/, 5];
-                                    _a.label = 1;
+                                    return [4 /*yield*/, (function terminateAllChildProcesses() {
+                                            return __awaiter(this, void 0, void 0, function () {
+                                                var e_4, _a, terminateDaemonProcess, terminatePreForkChildProcessesSafeCall, tasks, _loop_2, _b, _c, _d, daemonProcess_1, terminatePreForkChildProcesses;
+                                                var _this = this;
+                                                return __generator(this, function (_e) {
+                                                    switch (_e.label) {
+                                                        case 0:
+                                                            terminateDaemonProcess = function (daemonProcess) { return __awaiter(_this, void 0, void 0, function () {
+                                                                return __generator(this, function (_a) {
+                                                                    return [2 /*return*/, new Promise(function (resolve) {
+                                                                            log("Attempt to gracefully terminate daemon process...");
+                                                                            daemonProcess.send(null);
+                                                                            var isKilled = false;
+                                                                            var timer = setTimeout(function () {
+                                                                                isKilled = true;
+                                                                                log("Daemon process not responding, sending KILL signal...");
+                                                                                daemonProcess.kill("SIGKILL");
+                                                                            }, (9 / 10) * stop_timeout);
+                                                                            var onTerminate = function (childProcessExitCode) {
+                                                                                log("Daemon process exited with code " + childProcessExitCode);
+                                                                                clearTimeout(timer);
+                                                                                resolve(childProcessExitCode);
+                                                                            };
+                                                                            daemonProcess.once("close", function (childProcessExitCode) {
+                                                                                if (typeof childProcessExitCode !== "number" || isNaN(childProcessExitCode)) {
+                                                                                    childProcessExitCode = isKilled ? 1 : 0;
+                                                                                }
+                                                                                onTerminate(childProcessExitCode);
+                                                                            });
+                                                                            daemonProcess.once("error", function () { return onTerminate(1); });
+                                                                        })];
+                                                                });
+                                                            }); };
+                                                            terminatePreForkChildProcessesSafeCall = function (impl) {
+                                                                var timer;
+                                                                return Promise.race([
+                                                                    new Promise(function (resolve) { return timer = setTimeout(function () { return resolve("TIMEOUT"); }, (16 / 17) * stop_timeout); }),
+                                                                    (function () { return __awaiter(_this, void 0, void 0, function () {
+                                                                        var result, _a;
+                                                                        return __generator(this, function (_b) {
+                                                                            switch (_b.label) {
+                                                                                case 0:
+                                                                                    _b.trys.push([0, 2, , 3]);
+                                                                                    return [4 /*yield*/, impl()];
+                                                                                case 1:
+                                                                                    _b.sent();
+                                                                                    result = "SUCCESS";
+                                                                                    return [3 /*break*/, 3];
+                                                                                case 2:
+                                                                                    _a = _b.sent();
+                                                                                    result = "ERROR";
+                                                                                    return [3 /*break*/, 3];
+                                                                                case 3:
+                                                                                    clearTimeout(timer);
+                                                                                    return [2 /*return*/, result];
+                                                                            }
+                                                                        });
+                                                                    }); })()
+                                                                ]);
+                                                            };
+                                                            tasks = [];
+                                                            _loop_2 = function (daemonProcess_1, terminatePreForkChildProcesses) {
+                                                                tasks[tasks.length] = !daemonProcess_1 ? (new Promise(function (resolve) { return terminatePreForkChildProcessesSafeCall(terminatePreForkChildProcesses.impl)
+                                                                    .then(function (result) { return result === "SUCCESS" ? resolve(0) : resolve(1); }); })) : terminateDaemonProcess(daemonProcess_1);
+                                                            };
+                                                            try {
+                                                                for (_b = __values(daemonContexts.values()), _c = _b.next(); !_c.done; _c = _b.next()) {
+                                                                    _d = _c.value, daemonProcess_1 = _d.daemonProcess, terminatePreForkChildProcesses = _d.terminatePreForkChildProcesses;
+                                                                    _loop_2(daemonProcess_1, terminatePreForkChildProcesses);
+                                                                }
+                                                            }
+                                                            catch (e_4_1) { e_4 = { error: e_4_1 }; }
+                                                            finally {
+                                                                try {
+                                                                    if (_c && !_c.done && (_a = _b.return)) _a.call(_b);
+                                                                }
+                                                                finally { if (e_4) throw e_4.error; }
+                                                            }
+                                                            return [4 /*yield*/, Promise.all(tasks)];
+                                                        case 1: return [2 /*return*/, (_e.sent()).reduce(function (accumulator, currentValue) { return accumulator === 0 ? currentValue : accumulator; }, 0)];
+                                                    }
+                                                });
+                                            });
+                                        })()];
                                 case 1:
-                                    _a.trys.push([1, 3, , 4]);
-                                    return [4 /*yield*/, Promise.race([
-                                            new Promise(function (_, reject) { return setTimeout(function () { return reject(new Error("TerminateSubprocess took too long to resolve")); }, (16 / 17) * stop_timeout); }),
-                                            terminateSubProcesses()
-                                        ])];
-                                case 2:
                                     childProcessExitCode = _a.sent();
-                                    return [3 /*break*/, 4];
-                                case 3:
-                                    error_5 = _a.sent();
-                                    log("terminateSubProcess error", error_5);
-                                    childProcessExitCode = 1;
-                                    return [3 /*break*/, 4];
-                                case 4: return [3 /*break*/, 6];
-                                case 5:
-                                    childProcessExitCode = undefined;
-                                    _a.label = 6;
-                                case 6:
                                     if (exitCause.type === "EXCEPTION") {
+                                        /*
+                                         preForkTask throw or daemonProcess emit error or
+                                         one of the daemon exited with a non 0 code and
+                                         restart_delay was set <0
+                                        */
+                                        log("Root process exception message: " + exitCause.error.message);
                                         process.exitCode = 1;
                                     }
-                                    else if (childProcessExitCode !== undefined) {
-                                        process.exitCode = childProcessExitCode;
-                                    }
                                     else {
-                                        process.exitCode = 0;
+                                        process.exitCode = childProcessExitCode;
                                     }
                                     fs.unlinkSync(pidfile_path);
                                     log("pidfile deleted");
@@ -1049,119 +1169,128 @@ function createService(params) {
                         });
                     }); }, stop_timeout);
                     setProcessExitHandler.log = log;
-                    max_consecutive_restart = 3;
-                    restart_attempt_remaining = max_consecutive_restart;
-                    reset_restart_attempt_timer = undefined;
-                    (function callee() {
-                        return __awaiter(this, void 0, void 0, function () {
-                            var error_6, daemonProcess;
-                            return __generator(this, function (_a) {
-                                switch (_a.label) {
-                                    case 0:
-                                        clearTimeout(reset_restart_attempt_timer);
-                                        if (!!!preForkTask) return [3 /*break*/, 4];
-                                        log("performing pre fork tasks...");
-                                        _a.label = 1;
-                                    case 1:
-                                        _a.trys.push([1, 3, , 4]);
-                                        return [4 /*yield*/, preForkTask(boxedTerminateSubProcesses)];
-                                    case 2:
-                                        _a.sent();
-                                        return [3 /*break*/, 4];
-                                    case 3:
-                                        error_6 = _a.sent();
-                                        log("PreFork function raised an exception ( altho it should not have! ) ");
-                                        throw error_6;
-                                    case 4:
-                                        if (isTerminating) {
-                                            return [2 /*return*/];
-                                        }
-                                        log("Forking daemon process now.");
-                                        reset_restart_attempt_timer = setTimeout(function () { return restart_attempt_remaining = max_consecutive_restart; }, 10000);
-                                        daemonProcess = child_process.fork(main_js_path, [], {
-                                            "uid": daemon_unix_user ? get_uid(daemon_unix_user) : undefined,
-                                            "gid": daemon_unix_user ? get_gid(daemon_unix_user) : undefined,
-                                            "silent": true,
-                                            "cwd": daemon_cwd,
-                                            "execPath": daemon_node_path
-                                        });
-                                        daemonProcess.once("error", function (error) {
-                                            if (isTerminating) {
-                                                return;
-                                            }
-                                            log([
-                                                "Error evt emitted by daemon process which mean that: ",
-                                                "The process could not be spawned, or",
-                                                "The process could not be killed, or",
-                                                "Sending a message to the child process failed."
-                                            ].join("\n"));
-                                            throw error;
-                                        });
-                                        if (doForwardDaemonStdout) {
-                                            daemonProcess.stdout.on("data", function (data) {
-                                                return process.stdout.write(data);
-                                            });
-                                        }
-                                        daemonProcess.once("close", function (childProcessExitCode) {
-                                            if (isTerminating) {
-                                                return;
-                                            }
-                                            delete boxedTerminateSubProcesses.terminateSubProcesses;
-                                            log("Daemon process exited without being requested to");
-                                            if (daemon_restart_after_crash_delay < 0) {
-                                                if (childProcessExitCode === null) {
-                                                    childProcessExitCode = 1;
-                                                }
-                                                log("Daemon will not be restarted ( exit code : " + childProcessExitCode + " ) ");
-                                                boxedTerminateSubProcesses.terminateSubProcesses = function () { return Promise.resolve(childProcessExitCode); };
-                                                clearTimeout(reset_restart_attempt_timer);
-                                                return;
-                                            }
-                                            if (restart_attempt_remaining-- === 0) {
-                                                throw new Error("Daemon is crashing over and over");
-                                            }
-                                            log("Will be restarted ( attempt remaining: " + restart_attempt_remaining + " )");
-                                            setTimeout(function () { return callee(); }, daemon_restart_after_crash_delay);
-                                        });
-                                        boxedTerminateSubProcesses.terminateSubProcesses = function () { return new Promise(function (resolve) {
-                                            log("Attempt to gracefully terminate daemon process...");
-                                            daemonProcess.send(null);
-                                            daemonProcess.removeAllListeners("close");
-                                            var isKilled = false;
-                                            var timer = setTimeout(function () {
-                                                isKilled = true;
-                                                log("Daemon process not responding, sending KILL signal...");
-                                                daemonProcess.kill("SIGKILL");
-                                            }, (9 / 10) * stop_timeout);
-                                            daemonProcess.once("close", function (childProcessExitCode) {
-                                                if (typeof childProcessExitCode !== "number" || isNaN(childProcessExitCode)) {
-                                                    childProcessExitCode = isKilled ? 1 : 0;
-                                                }
-                                                log("Daemon process exited with code " + childProcessExitCode);
-                                                clearTimeout(timer);
-                                                resolve(childProcessExitCode);
-                                            });
-                                        }); };
-                                        return [2 /*return*/];
-                                }
-                            });
-                        });
+                    args = (function () {
+                        var out = __spread(process.argv);
+                        out.shift();
+                        out.shift();
+                        return out;
                     })();
+                    makeForkOptions = function (daemon_number) { return ({
+                        "uid": daemon_unix_user ? get_uid(daemon_unix_user) : undefined,
+                        "gid": daemon_unix_user ? get_gid(daemon_unix_user) : undefined,
+                        "silent": true,
+                        "cwd": daemon_cwd,
+                        "execPath": daemon_node_path,
+                        "env": __assign({}, process.env, { daemon_number: daemon_number, daemon_count: daemon_count, stop_timeout: stop_timeout })
+                    }); };
+                    forkDaemon = function (daemon_number) { return __awaiter(_this, void 0, void 0, function () {
+                        var context, error_5, daemonProcess;
+                        return __generator(this, function (_a) {
+                            switch (_a.label) {
+                                case 0:
+                                    context = daemonContexts.get(daemon_number);
+                                    clearTimeout(context.reset_restart_attempt_timer);
+                                    if (!!!preForkTask) return [3 /*break*/, 5];
+                                    log("performing pre fork tasks for daemon number " + daemon_number + "...");
+                                    _a.label = 1;
+                                case 1:
+                                    _a.trys.push([1, 3, , 4]);
+                                    return [4 /*yield*/, preForkTask(context.terminatePreForkChildProcesses, daemon_number)];
+                                case 2:
+                                    _a.sent();
+                                    return [3 /*break*/, 4];
+                                case 3:
+                                    error_5 = _a.sent();
+                                    log("PreFork tasks for daemon number " + daemon_number + " raised an exception ( even tho it should never do so! ) ");
+                                    throw error_5;
+                                case 4:
+                                    context.terminatePreForkChildProcesses.impl = function () { return Promise.resolve(); };
+                                    _a.label = 5;
+                                case 5:
+                                    if (isTerminating) {
+                                        return [2 /*return*/];
+                                    }
+                                    context.reset_restart_attempt_timer = setTimeout(function () { return context.restart_attempt_remaining = max_consecutive_restart; }, 10000);
+                                    log("Forking daemon process number " + daemon_number + " now.");
+                                    daemonProcess = child_process.fork(main_js_path, args, makeForkOptions(daemon_number));
+                                    context.daemonProcess = daemonProcess;
+                                    if (doForwardDaemonStdout) {
+                                        daemonProcess.stdout.on("data", function (data) {
+                                            return process.stdout.write(data);
+                                        });
+                                    }
+                                    daemonProcess.once("error", function (error) {
+                                        if (isTerminating) {
+                                            return;
+                                        }
+                                        context.daemonProcess = undefined;
+                                        log([
+                                            "Error evt emitted by daemon process number " + daemon_number,
+                                            "Meaning that: ",
+                                            "The process could not be spawned, or",
+                                            "The process could not be killed, or",
+                                            "Sending a message to the child process failed."
+                                        ].join("\n"));
+                                        throw error;
+                                    });
+                                    daemonProcess.once("close", function (childProcessExitCode) {
+                                        if (isTerminating) {
+                                            return;
+                                        }
+                                        context.daemonProcess = undefined;
+                                        log("Daemon process " + daemon_number + " exited without being requested to.");
+                                        if (daemon_restart_after_crash_delay < 0) {
+                                            if (childProcessExitCode === null) {
+                                                childProcessExitCode = 1;
+                                            }
+                                            log("Daemon number " + daemon_number + " will not be restarted.");
+                                            clearTimeout(context.reset_restart_attempt_timer);
+                                            if (childProcessExitCode !== 0) {
+                                                throw new Error("Daemon number " + daemon_number + ", crashed");
+                                            }
+                                            else if (!Array.from(daemonContexts.values()).find(function (_a) {
+                                                var daemonProcess = _a.daemonProcess;
+                                                return !!daemonProcess;
+                                            })) {
+                                                log("As last remaining daemon process terminated cleanly we stop end root process");
+                                                process.emit("beforeExit", NaN);
+                                            }
+                                            return;
+                                        }
+                                        if (context.restart_attempt_remaining-- === 0) {
+                                            throw new Error("Daemon process " + daemon_number + " is crashing over and over");
+                                        }
+                                        log("Daemon process " + daemon_number + " will be restarted ( attempt remaining: " + context.restart_attempt_remaining + " )");
+                                        setTimeout(function () { return forkDaemon(daemon_number); }, daemon_restart_after_crash_delay);
+                                    });
+                                    return [2 /*return*/];
+                            }
+                        });
+                    }); };
+                    for (daemon_number = 1; daemon_number <= daemon_count; daemon_number++) {
+                        forkDaemon(daemon_number);
+                    }
                     return [2 /*return*/];
             }
         });
     }); };
     var main_daemon = function () { return __awaiter(_this, void 0, void 0, function () {
-        var _a, launch, beforeExitTask;
+        var _a, daemon_number, daemon_count, stop_timeout, _b, launch, beforeExitTask;
         var _this = this;
-        return __generator(this, function (_b) {
-            switch (_b.label) {
-                case 0: return [4 /*yield*/, daemonProcess()];
+        return __generator(this, function (_c) {
+            switch (_c.label) {
+                case 0:
+                    _a = __read(["daemon_number", "daemon_count", "stop_timeout"].map(function (key) {
+                        var value = parseInt(process.env[key]);
+                        delete process[key];
+                        return value;
+                    }), 3), daemon_number = _a[0], daemon_count = _a[1], stop_timeout = _a[2];
+                    return [4 /*yield*/, daemonProcess(daemon_number, daemon_count)];
                 case 1:
-                    _a = _b.sent(), launch = _a.launch, beforeExitTask = _a.beforeExitTask;
+                    _b = _c.sent(), launch = _b.launch, beforeExitTask = _b.beforeExitTask;
                     process.once("message", function () { return process.emit("beforeExit", process.exitCode = 0); });
                     process.once("disconnect", function () { return process.exit(1); });
-                    setProcessExitHandler.log = console.log.bind(console);
+                    //setProcessExitHandler.log = console.log.bind(console);
                     setProcessExitHandler(function (exitCause) { return __awaiter(_this, void 0, void 0, function () {
                         var error;
                         return __generator(this, function (_a) {
@@ -1193,9 +1322,11 @@ exports.createService = createService;
 /**
  * Generate a systemd config file for a service created via "createService" function
  */
-function makeSystemdConfigFile(main_js_path, node_path) {
+function systemd_createConfigFile(srv_name, main_js_path, node_path, enable, start) {
     if (node_path === void 0) { node_path = process.argv[0]; }
-    return [
+    if (enable === void 0) { enable = "ENABLE"; }
+    if (start === void 0) { start = "START"; }
+    fs.writeFileSync(systemd_createConfigFile.mkPath(srv_name), Buffer.from([
         "[Unit]",
         "After=network.target",
         "",
@@ -1204,10 +1335,35 @@ function makeSystemdConfigFile(main_js_path, node_path) {
         "StandardOutput=inherit",
         "KillSignal=SIGUSR2",
         "SendSIGKILL=no",
+        "Environment=NODE_ENV=production",
         "",
         "[Install]",
         "WantedBy=multi-user.target",
         ""
-    ].join("\n");
+    ].join("\n"), "utf8"));
+    execSyncNoCmdTrace("systemctl daemon-reload");
+    if (!!enable) {
+        execSyncNoCmdTrace("systemctl enable " + srv_name, { "stdio": "pipe" });
+    }
+    if (!!start) {
+        execSyncNoCmdTrace("systemctl start " + srv_name);
+    }
 }
-exports.makeSystemdConfigFile = makeSystemdConfigFile;
+exports.systemd_createConfigFile = systemd_createConfigFile;
+(function (systemd_createConfigFile) {
+    systemd_createConfigFile.mkPath = function (srv_name) { return "/etc/systemd/system/" + srv_name + ".service"; };
+})(systemd_createConfigFile = exports.systemd_createConfigFile || (exports.systemd_createConfigFile = {}));
+/** Remove config file disable and reload daemon, never throw */
+function systemd_deleteConfigFile(srv_name, stop) {
+    if (stop === void 0) { stop = false; }
+    if (!!stop) {
+        execSyncNoCmdTrace("systemctl stop " + srv_name + " || true", { "stdio": "pipe" });
+    }
+    execSyncNoCmdTrace("systemctl disable " + srv_name + " || true");
+    try {
+        fs.unlinkSync(systemd_createConfigFile.mkPath(srv_name));
+    }
+    catch (_a) { }
+    execSyncNoCmdTrace("systemctl daemon-reload || true", { "stdio": "pipe" });
+}
+exports.systemd_deleteConfigFile = systemd_deleteConfigFile;

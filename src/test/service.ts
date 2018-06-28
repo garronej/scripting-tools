@@ -1,33 +1,39 @@
 import * as scriptLib from "../lib";
 
 scriptLib.createService({
-    "stop_timeout": 5678,
     "rootProcess": async () => {
 
         const path = await import("path");
         const child_process = await import("child_process");
         const util = await import("util");
 
-        const log: typeof console.log = (...args) => {
-            process.stdout.write(
-                Buffer.from(
-                    scriptLib.colorize(`(root process custom) ${util.format.apply(util, args)}\n`, "YELLOW"),
-                    "utf8"
-                )
-            );
-        }
-
         return {
             "pidfile_path": path.join(__dirname, "pid"),
+            "stop_timeout": 5678,
             "isQuiet": false,
+            "assert_unix_user": "root",
+            "daemon_count": 2,
             "doForwardDaemonStdout": true,
             "daemon_unix_user": "pi",
             "daemon_node_path": "/usr/bin/node",
             "daemon_cwd": "/home/pi",
-            "daemon_restart_after_crash_delay": 1234,
             //"daemon_restart_after_crash_delay": -1,
-            "preForkTask": async ref => {
+            "preForkTask": async (terminateChildProcesses, daemon_number) => {
 
+                const log: typeof console.log = (...args) => {
+                    process.stdout.write(
+                        Buffer.from(
+                            scriptLib.colorize(`(root process custom, daemon_number: ${daemon_number}) ${util.format.apply(util, args)}\n`, "YELLOW"),
+                            "utf8"
+                        )
+                    );
+                };
+
+                if( daemon_number === 1 ){
+                    
+                    await new Promise(resolve=>setTimeout(resolve, 2000));
+
+                }
 
                 while (true) {
 
@@ -35,19 +41,19 @@ scriptLib.createService({
 
                         log("preFork subprocess...");
 
-                        const childProcess = child_process.exec("sleep 0.2 && (($RANDOM%2))", { "shell": "/bin/bash" });
+                        const childProcess = child_process.exec("sleep 1 && (($RANDOM%3))", { "shell": "/bin/bash" });
 
                         childProcess.once("error", () => resolve(false))
                             .once("close", code => (code === 0) ? resolve(true) : resolve(false))
                             ;
 
-                        ref.terminateSubProcesses = () => new Promise(resolve_ => {
+                        terminateChildProcesses.impl = () => new Promise(resolve_ => {
 
                             resolve = () => {
 
                                 log("preFork subprocess killed");
 
-                                resolve_(0);
+                                resolve_();
 
                             };
 
@@ -61,24 +67,24 @@ scriptLib.createService({
 
                     if (isSuccess) {
 
-                        log("preFork tasks complete");
+                        log("preFork tasks complete!");
 
                         break;
 
                     } else {
 
-                        log("not yet");
+                        log("Not yet ready to fork...");
 
                     }
 
                 }
 
             }
-            
+
         };
 
     },
-    "daemonProcess": async () => {
+    "daemonProcess": async (daemon_number, daemon_count) => {
 
         const os = await import("os");
         const util = await import("util");
@@ -86,7 +92,7 @@ scriptLib.createService({
         const log: typeof console.log = (...args) => {
             process.stdout.write(
                 Buffer.from(
-                    scriptLib.colorize(`(daemon process) ${util.format.apply(util, args)}\n`, "GREEN"),
+                    scriptLib.colorize(`(daemon process ${daemon_number}) ${util.format.apply(util, args)}\n`, "GREEN"),
                     "utf8"
                 )
             );
@@ -95,17 +101,33 @@ scriptLib.createService({
         return {
             "launch": async () => {
 
-                while (true) {
+                let count= 10;
+
+                while (count--) {
 
                     log("Grinding hard...", {
+                        "daemon_count": daemon_count,
                         "pid": process.pid,
                         "user": os.userInfo().username,
-                        "cwd": process.cwd()
+                        "cwd": process.cwd(),
+                        "argv": process.argv
                     });
 
-                    await new Promise(resolve => setTimeout(resolve, 500));
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+
+                    if( daemon_number === 1 && count === 5 ){
+
+                        log("Terminating daemon process 1");
+
+                        process.emit("beforeExit", process.exitCode = 0);
+
+                    }
 
                 }
+
+                log("Terminating daemon process 2");
+
+                process.emit("beforeExit", process.exitCode = 0);
 
             },
             "beforeExitTask": async error => {

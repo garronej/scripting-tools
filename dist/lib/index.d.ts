@@ -310,23 +310,32 @@ export declare namespace stopProcessSync {
  *      running it is gracefully terminated )
  * -Ensure that the process will terminate in at most [ stop_timeout ] ms after
  *      receiving INT or USR2 signal. (default 5second)
- * -Forward daemon process stdout to root process stdout.
+ * -Forward daemon processes stdout to root process stdout.
+ * -Can fork multiple daemon process.
  *
- * =>stop_timeout: The maximum amount of time ( in ms ) the root process can
+ * The root process forward command line arguments and environnement variable to
+ * the daemon processes.
  *
  * => rootProcess function should return:
  * -pidfile_path: where to store the pid of the root process.
  *      take to terminate after requested to exit gracefully.
+ * -stop_timeout: The maximum amount of time ( in ms ) the the root process
+ *      is allowed to take for terminating.
+ * -assert_unix_user: enforce that the main be called by a specific user.
  * -isQuiet?: set to true to disable root process debug info logging on stdout. ( default false )
  * -doForwardDaemonStdout?: set to true to forward everything the daemon
  *      process write to stdout to the root process stdout. ( default true )
- * -daemon_unix_user?: User by who should be owned the daemon process.
+ * -daemon_unix_user?: User who should own the daemon process.
  * -daemon_node_path?: Node.js executable that should be used to by the daemon process.
  * -daemon_cwd?: working directory of the daemon process.
- * -daemon_restart_after_crash_delay?: Delay in ms before creating a new fork of the daemon
- * after a crash. If set to a negative number the daemon will not be restarted after it terminate restart.
- * The exit code of the main process will be the exit code of the daemon.
- * Default to 500ms.
+ * -daemon_restart_after_crash_delay?: ( Default to 500ms. )Delay in ms before restarting the daemon
+ *      after it terminate without being requested to. If set to a negative number the daemons
+ *      will not be restarted after it terminate for the first time and :
+ *      If a daemon process exited with 0 and there is no other daemon process the root process
+ *      will end with a clean exit code.
+ *      If any of the daemon exit with an unclean code the root process will be terminated with an error code
+ *      even if there is some other daemon running.
+ * -daemon_count: Number of instance of daemon process that should be forked, default 1.
  * -preForkTask: Task to perform before forking a daemon process.
  *      It is called just before forking the daemon process. ( called again on every restart. )
  *      If the function is async the daemon will not be forked until the returned promise resolve.
@@ -338,13 +347,18 @@ export declare namespace stopProcessSync {
  *      The to which the promise resolve will be used as exit code for the root process.
  *      Note that terminateSubProcess should never be called, it is a OUT parameter.
  *
- * => daemonProcess function should return:
+ *
+ *
+ * => daemonProcess
+ * It should return:
  * -launch: the function that the daemon process need to call to start the actual job that the service is meant to perform.
  * -beforeExitTask: function that should be called before the daemon process exit. ( e.g. creating crash report ).
  *      If the daemon process is terminating due to an error the error will be passed as argument.
  *      There is two scenario that will led to this function NOT being called:
  *      1)The daemon process receive KILL or other deadly signal that can't be overridden.
  *      2)The root process terminate.
+ * daemon_number represent the instance index of the daemon among the total of [damon_count] process forked.
+ * It can be user to use a different logfile for each daemon process instance.
  *
  * NOTE: If the root process receive a deadly signal other than INT, USR2 or HUP
  * ( e.g. KILL or STOP ) the root and daemon processes will immediately terminate without
@@ -353,35 +367,40 @@ export declare namespace stopProcessSync {
  * NOTE: because setting listener on "message" and "disconnect" process event prevent the
  * thread from terminating naturally where is nothing more to do if you wish to manually
  * terminate the daemon process without termination being requested from the parent you can:
- *        1) emit "beforeExit" on process
+ *        1) emit "beforeExit" on process setting the desired exit code ( process.emit("beforeExit", process.exitCode= X);
  *        2) throw an exception.
  *
- * If the daemon process is crashing over and over again the root process is eventually
- * terminated.
- *
- * The main.js must be called as root ( otherwise close with error message )
+ * If once of the daemon process is crashing over and over again the root process will eventually
+ * be terminated to prevent waisting host resources.
  *
  */
 export declare function createService(params: {
-    stop_timeout?: number;
     rootProcess(): Promise<{
         pidfile_path: string;
+        stop_timeout?: number;
+        assert_unix_user?: string;
         isQuiet?: boolean;
         doForwardDaemonStdout?: boolean;
         daemon_unix_user?: string;
         daemon_node_path?: string;
         daemon_cwd?: string;
         daemon_restart_after_crash_delay?: number;
-        preForkTask?: (boxedTerminateSubProcesses: {
-            terminateSubProcesses?: () => Promise<number>;
-        }) => Promise<void> | void;
+        daemon_count?: number;
+        preForkTask?: (terminateChildProcesses: {
+            impl: () => Promise<void>;
+        }, daemon_number: number) => Promise<void> | void;
     }>;
-    daemonProcess(): Promise<{
-        launch(): any;
+    daemonProcess(daemon_number: number, daemon_count: number): Promise<{
+        launch: () => any;
         beforeExitTask?: (error: Error | undefined) => Promise<void>;
     }>;
 }): void;
 /**
  * Generate a systemd config file for a service created via "createService" function
  */
-export declare function makeSystemdConfigFile(main_js_path: string, node_path?: string): string;
+export declare function systemd_createConfigFile(srv_name: string, main_js_path: string, node_path?: string, enable?: "ENABLE" | false, start?: "START" | false): void;
+export declare namespace systemd_createConfigFile {
+    const mkPath: (srv_name: string) => string;
+}
+/** Remove config file disable and reload daemon, never throw */
+export declare function systemd_deleteConfigFile(srv_name: string, stop?: "STOP" | false): void;
