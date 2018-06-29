@@ -872,6 +872,9 @@ exports.setProcessExitHandler = setProcessExitHandler;
  * Assume that the given signal is supposed to be deadly for the process.
  * The process is identified by a pid stored in pidfile.
  *
+ * By default send USR2 witch is the default signal to gracefully
+ * terminate a service created with the createService function.
+ *
  * If the pidfile exist but the process identified by pid does not
  * then the pidfile is suppressed. ( Assume write access on pidfile )
  *
