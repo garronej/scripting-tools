@@ -394,7 +394,7 @@ export declare function createService(params: {
     }>;
     daemonProcess(daemon_number: number, daemon_count: number): Promise<{
         launch: () => any;
-        beforeExitTask?: (error: Error | undefined) => Promise<void>;
+        beforeExitTask?: (error: Error | undefined) => Promise<void> | void;
     }>;
 }): void;
 export declare namespace systemd {
