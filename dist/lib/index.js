@@ -657,6 +657,7 @@ exports.createScript = createScript;
 var unixUser;
 (function (unixUser) {
     function create(unix_user, home_dir_path) {
+        if (home_dir_path === void 0) { home_dir_path = "/tmp"; }
         execSyncNoCmdTrace("useradd -M " + unix_user + " -s /bin/false -d " + home_dir_path);
     }
     unixUser.create = create;

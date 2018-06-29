@@ -175,8 +175,8 @@ export declare function createSymlink(src_path: string, dst_path: string): void;
 /** Create a executable file */
 export declare function createScript(file_path: string, content: string): void;
 export declare namespace unixUser {
-    function create(unix_user: string, home_dir_path: string): void;
-    function remove(unix_user: any): void;
+    function create(unix_user: string, home_dir_path?: string): void;
+    function remove(unix_user: string): void;
 }
 export { get_caller_file_path } from "./get_caller_file_path";
 /**

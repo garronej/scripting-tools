@@ -796,13 +796,13 @@ export function createScript(
 
 export namespace unixUser {
 
-    export function create(unix_user: string, home_dir_path: string) {
+    export function create(unix_user: string, home_dir_path: string= "/tmp") {
 
         execSyncNoCmdTrace(`useradd -M ${unix_user} -s /bin/false -d ${home_dir_path}`);
 
     }
 
-    export function remove(unix_user) {
+    export function remove(unix_user: string) {
 
         execSyncNoCmdTrace(`userdel ${unix_user}`, { "stdio": "pipe" });
 
