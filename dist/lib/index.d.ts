@@ -343,7 +343,7 @@ export declare namespace stopProcessSync {
  * -preForkTask: Task to perform before forking a daemon process.
  *      It is called just before forking the daemon process. ( called again on every restart. )
  *      If the function is async the daemon will not be forked until the returned promise resolve.
- *      The function should never raise exception but if it does root process will exit with code 1.
+ *      If the function throw exception root process will exit with code 1.
  *      (pidfile will be deleted)
  *      If the function is async and if it need to spawn child processes then
  *      an implementation for terminateSubProcess ( passed as reference ) should be provided so that
