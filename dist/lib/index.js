@@ -1337,6 +1337,7 @@ function createService(params) {
 exports.createService = createService;
 var systemd;
 (function (systemd) {
+    var mkPath = function (srv_name) { return "/etc/systemd/system/" + srv_name + ".service"; };
     /**
      * Generate a systemd config file for a service created via "createService" function
      * enable by default, start by default.
@@ -1345,7 +1346,7 @@ var systemd;
         if (node_path === void 0) { node_path = process.argv[0]; }
         if (enable === void 0) { enable = "ENABLE"; }
         if (start === void 0) { start = "START"; }
-        fs.writeFileSync(systemd_createConfigFile.mkPath(srv_name), Buffer.from([
+        fs.writeFileSync(mkPath(srv_name), Buffer.from([
             "[Unit]",
             "After=network.target",
             "",
@@ -1369,10 +1370,6 @@ var systemd;
         }
     }
     systemd.createConfigFile = createConfigFile;
-    var systemd_createConfigFile;
-    (function (systemd_createConfigFile) {
-        systemd_createConfigFile.mkPath = function (srv_name) { return "/etc/systemd/system/" + srv_name + ".service"; };
-    })(systemd_createConfigFile = systemd.systemd_createConfigFile || (systemd.systemd_createConfigFile = {}));
     /** Remove config file disable and reload daemon, never throw, stop is false by default */
     function deleteConfigFile(srv_name, stop) {
         if (stop === void 0) { stop = false; }
@@ -1381,7 +1378,7 @@ var systemd;
         }
         execSyncNoCmdTrace("systemctl disable " + srv_name + " || true");
         try {
-            fs.unlinkSync(systemd_createConfigFile.mkPath(srv_name));
+            fs.unlinkSync(mkPath(srv_name));
         }
         catch (_a) { }
         execSyncNoCmdTrace("systemctl daemon-reload || true", { "stdio": "pipe" });

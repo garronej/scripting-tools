@@ -1697,6 +1697,8 @@ export function createService(params: {
 
 export namespace systemd {
 
+    const mkPath = (srv_name: string) => `/etc/systemd/system/${srv_name}.service`;
+
     /**
      * Generate a systemd config file for a service created via "createService" function
      * enable by default, start by default.
@@ -1710,7 +1712,7 @@ export namespace systemd {
     ) {
 
         fs.writeFileSync(
-            systemd_createConfigFile.mkPath(srv_name),
+            mkPath(srv_name),
             Buffer.from([
                 `[Unit]`,
                 `After=network.target`,
@@ -1744,11 +1746,6 @@ export namespace systemd {
 
     }
 
-    export namespace systemd_createConfigFile {
-
-        export const mkPath = (srv_name: string) => `/etc/systemd/system/${srv_name}.service`;
-
-    }
 
     /** Remove config file disable and reload daemon, never throw, stop is false by default */
     export function deleteConfigFile(srv_name: string, stop: false | "STOP" = false) {
@@ -1761,7 +1758,7 @@ export namespace systemd {
 
         execSyncNoCmdTrace(`systemctl disable ${srv_name} || true`);
 
-        try { fs.unlinkSync(systemd_createConfigFile.mkPath(srv_name)); } catch{ }
+        try { fs.unlinkSync(mkPath(srv_name)); } catch{ }
 
         execSyncNoCmdTrace("systemctl daemon-reload || true", { "stdio": "pipe" });
 

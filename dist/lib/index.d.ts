@@ -403,9 +403,6 @@ export declare namespace systemd {
      * enable by default, start by default.
      */
     function createConfigFile(srv_name: string, main_js_path: string, node_path?: string, enable?: "ENABLE" | false, start?: "START" | false): void;
-    namespace systemd_createConfigFile {
-        const mkPath: (srv_name: string) => string;
-    }
     /** Remove config file disable and reload daemon, never throw, stop is false by default */
     function deleteConfigFile(srv_name: string, stop?: false | "STOP"): void;
 }
