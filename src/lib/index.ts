@@ -1204,11 +1204,11 @@ export namespace stopProcessSync {
  * The root process forward command line arguments and environnement variable to 
  * the daemon processes.
  * 
- * srv_name: Name of the service to overwrite the process names. (Default: not overwriting)
  * 
  * => rootProcess function should return ( when not default ): 
  * -pidfile_path: where to store the pid of the root process.
  *      take to terminate after requested to exit gracefully.
+ * -srv_name: Name of the service to overwrite the process names. (Default: not overwriting)
  * -stop_timeout: The maximum amount of time ( in ms ) the the root process 
  *      is allowed to take for terminating. Defaults to 5000ms.
  * -assert_unix_user: enforce that the main be called by a specific user.
@@ -1263,9 +1263,9 @@ export namespace stopProcessSync {
  * 
  */
 export function createService(params: {
-    srv_name?: string,
     rootProcess(): Promise<{
         pidfile_path: string;
+        srv_name?: string,
         stop_timeout?: number;
         assert_unix_user?: string;
         isQuiet?: boolean;
@@ -1289,21 +1289,16 @@ export function createService(params: {
     const max_consecutive_restart = 300;
 
     const {
-        srv_name,
         rootProcess,
-        daemonProcess,
+        daemonProcess
     } = params;
 
     const main_root = async (main_js_path: string) => {
 
-        if (!!srv_name) {
-
-            process.title = `${srv_name} root process`;
-
-        }
 
         const {
             pidfile_path,
+            srv_name,
             stop_timeout: _stop_timeout,
             assert_unix_user,
             isQuiet,
@@ -1315,6 +1310,14 @@ export function createService(params: {
             preForkTask,
             daemon_count: _daemon_count
         } = await rootProcess();
+
+
+        if (srv_name !== undefined ) {
+
+            process.title = `${srv_name} root process`;
+
+        }
+
 
         const stop_timeout =
             _stop_timeout !== undefined ?
@@ -1543,13 +1546,23 @@ export function createService(params: {
 
         })();
 
+        const [ daemon_uid, daemon_gid ]= (()=>{
+
+            if( !!daemon_unix_user ){
+                return [get_uid(daemon_unix_user), get_gid(daemon_unix_user)];
+            }else{
+                [undefined, undefined];
+            }
+
+        })();
+
         const makeForkOptions = (daemon_number): child_process.ForkOptions => ({
-            "uid": daemon_unix_user ? get_uid(daemon_unix_user) : undefined,
-            "gid": daemon_unix_user ? get_gid(daemon_unix_user) : undefined,
+            "uid": daemon_uid,
+            "gid": daemon_gid,
             "silent": true,
             "cwd": daemon_cwd,
             "execPath": daemon_node_path,
-            "env": { ...process.env, daemon_number, daemon_count, stop_timeout }
+            "env": { ...process.env, daemon_number, daemon_count, stop_timeout, srv_name }
         });
 
         const forkDaemon = async (daemon_number: number) => {
@@ -1695,8 +1708,24 @@ export function createService(params: {
                 delete process.env[key];
                 return value;
             });
+        
+        const srv_name= (()=>{
 
-        if (!!srv_name) {
+            const key= "srv_name";
+
+            const value= process.env[key]!;
+
+            delete process.env[key];
+
+            if( value === `${undefined}` ){
+                return undefined;
+            }else{
+                return value;
+            }
+
+        })();
+
+        if( srv_name !== undefined ){
 
             process.title = `${srv_name} daemon ${daemon_number}`;
 

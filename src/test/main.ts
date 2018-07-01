@@ -1,7 +1,6 @@
 import * as scriptLib from "../lib";
 
 scriptLib.createService({
-    "srv_name": "phony",
     "rootProcess": async () => {
 
         const path = await import("path");
@@ -10,6 +9,7 @@ scriptLib.createService({
 
         return {
             "pidfile_path": path.join(__dirname, "run" ,"pid"),
+            "srv_name": "phony",
             "stop_timeout": 5678,
             "isQuiet": false,
             "assert_unix_user": "root",

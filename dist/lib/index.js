@@ -970,11 +970,11 @@ exports.stopProcessSync = stopProcessSync;
  * The root process forward command line arguments and environnement variable to
  * the daemon processes.
  *
- * srv_name: Name of the service to overwrite the process names. (Default: not overwriting)
  *
  * => rootProcess function should return ( when not default ):
  * -pidfile_path: where to store the pid of the root process.
  *      take to terminate after requested to exit gracefully.
+ * -srv_name: Name of the service to overwrite the process names. (Default: not overwriting)
  * -stop_timeout: The maximum amount of time ( in ms ) the the root process
  *      is allowed to take for terminating. Defaults to 5000ms.
  * -assert_unix_user: enforce that the main be called by a specific user.
@@ -1031,19 +1031,18 @@ exports.stopProcessSync = stopProcessSync;
 function createService(params) {
     var _this = this;
     var max_consecutive_restart = 300;
-    var srv_name = params.srv_name, rootProcess = params.rootProcess, daemonProcess = params.daemonProcess;
+    var rootProcess = params.rootProcess, daemonProcess = params.daemonProcess;
     var main_root = function (main_js_path) { return __awaiter(_this, void 0, void 0, function () {
-        var _a, pidfile_path, _stop_timeout, assert_unix_user, isQuiet, _doForwardDaemonStdout, daemon_unix_user, daemon_node_path, daemon_cwd, _daemon_restart_after_crash_delay, preForkTask, _daemon_count, stop_timeout, doForwardDaemonStdout, daemon_restart_after_crash_delay, daemon_count, log, daemonContexts, isTerminating, args, makeForkOptions, forkDaemon, daemon_number;
+        var _a, pidfile_path, srv_name, _stop_timeout, assert_unix_user, isQuiet, _doForwardDaemonStdout, daemon_unix_user, daemon_node_path, daemon_cwd, _daemon_restart_after_crash_delay, preForkTask, _daemon_count, stop_timeout, doForwardDaemonStdout, daemon_restart_after_crash_delay, daemon_count, log, daemonContexts, isTerminating, args, _b, daemon_uid, daemon_gid, makeForkOptions, forkDaemon, daemon_number;
         var _this = this;
-        return __generator(this, function (_b) {
-            switch (_b.label) {
-                case 0:
-                    if (!!srv_name) {
+        return __generator(this, function (_c) {
+            switch (_c.label) {
+                case 0: return [4 /*yield*/, rootProcess()];
+                case 1:
+                    _a = _c.sent(), pidfile_path = _a.pidfile_path, srv_name = _a.srv_name, _stop_timeout = _a.stop_timeout, assert_unix_user = _a.assert_unix_user, isQuiet = _a.isQuiet, _doForwardDaemonStdout = _a.doForwardDaemonStdout, daemon_unix_user = _a.daemon_unix_user, daemon_node_path = _a.daemon_node_path, daemon_cwd = _a.daemon_cwd, _daemon_restart_after_crash_delay = _a.daemon_restart_after_crash_delay, preForkTask = _a.preForkTask, _daemon_count = _a.daemon_count;
+                    if (srv_name !== undefined) {
                         process.title = srv_name + " root process";
                     }
-                    return [4 /*yield*/, rootProcess()];
-                case 1:
-                    _a = _b.sent(), pidfile_path = _a.pidfile_path, _stop_timeout = _a.stop_timeout, assert_unix_user = _a.assert_unix_user, isQuiet = _a.isQuiet, _doForwardDaemonStdout = _a.doForwardDaemonStdout, daemon_unix_user = _a.daemon_unix_user, daemon_node_path = _a.daemon_node_path, daemon_cwd = _a.daemon_cwd, _daemon_restart_after_crash_delay = _a.daemon_restart_after_crash_delay, preForkTask = _a.preForkTask, _daemon_count = _a.daemon_count;
                     stop_timeout = _stop_timeout !== undefined ?
                         _stop_timeout : 5000;
                     doForwardDaemonStdout = _doForwardDaemonStdout !== undefined ?
@@ -1211,13 +1210,21 @@ function createService(params) {
                         out.shift();
                         return out;
                     })();
+                    _b = __read((function () {
+                        if (!!daemon_unix_user) {
+                            return [get_uid(daemon_unix_user), get_gid(daemon_unix_user)];
+                        }
+                        else {
+                            [undefined, undefined];
+                        }
+                    })(), 2), daemon_uid = _b[0], daemon_gid = _b[1];
                     makeForkOptions = function (daemon_number) { return ({
-                        "uid": daemon_unix_user ? get_uid(daemon_unix_user) : undefined,
-                        "gid": daemon_unix_user ? get_gid(daemon_unix_user) : undefined,
+                        "uid": daemon_uid,
+                        "gid": daemon_gid,
                         "silent": true,
                         "cwd": daemon_cwd,
                         "execPath": daemon_node_path,
-                        "env": __assign({}, process.env, { daemon_number: daemon_number, daemon_count: daemon_count, stop_timeout: stop_timeout })
+                        "env": __assign({}, process.env, { daemon_number: daemon_number, daemon_count: daemon_count, stop_timeout: stop_timeout, srv_name: srv_name })
                     }); };
                     forkDaemon = function (daemon_number) { return __awaiter(_this, void 0, void 0, function () {
                         var context, error_5, daemonProcess;
@@ -1311,7 +1318,7 @@ function createService(params) {
         });
     }); };
     var main_daemon = function () { return __awaiter(_this, void 0, void 0, function () {
-        var _a, daemon_number, daemon_count, stop_timeout, _b, launch, beforeExitTask;
+        var _a, daemon_number, daemon_count, stop_timeout, srv_name, _b, launch, beforeExitTask;
         var _this = this;
         return __generator(this, function (_c) {
             switch (_c.label) {
@@ -1321,7 +1328,18 @@ function createService(params) {
                         delete process.env[key];
                         return value;
                     }), 3), daemon_number = _a[0], daemon_count = _a[1], stop_timeout = _a[2];
-                    if (!!srv_name) {
+                    srv_name = (function () {
+                        var key = "srv_name";
+                        var value = process.env[key];
+                        delete process.env[key];
+                        if (value === "" + undefined) {
+                            return undefined;
+                        }
+                        else {
+                            return value;
+                        }
+                    })();
+                    if (srv_name !== undefined) {
                         process.title = srv_name + " daemon " + daemon_number;
                     }
                     return [4 /*yield*/, daemonProcess(daemon_number, daemon_count)];

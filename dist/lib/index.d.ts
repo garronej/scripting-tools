@@ -314,11 +314,11 @@ export declare namespace stopProcessSync {
  * The root process forward command line arguments and environnement variable to
  * the daemon processes.
  *
- * srv_name: Name of the service to overwrite the process names. (Default: not overwriting)
  *
  * => rootProcess function should return ( when not default ):
  * -pidfile_path: where to store the pid of the root process.
  *      take to terminate after requested to exit gracefully.
+ * -srv_name: Name of the service to overwrite the process names. (Default: not overwriting)
  * -stop_timeout: The maximum amount of time ( in ms ) the the root process
  *      is allowed to take for terminating. Defaults to 5000ms.
  * -assert_unix_user: enforce that the main be called by a specific user.
@@ -373,9 +373,9 @@ export declare namespace stopProcessSync {
  *
  */
 export declare function createService(params: {
-    srv_name?: string;
     rootProcess(): Promise<{
         pidfile_path: string;
+        srv_name?: string;
         stop_timeout?: number;
         assert_unix_user?: string;
         isQuiet?: boolean;
