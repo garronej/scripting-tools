@@ -1056,7 +1056,7 @@ export namespace setProcessExitHandler {
 /**
  * 
  * Stop a process by sending a specific signal.
- * Assume that the given signal is supposed to be deadly for the process.
+ * Assume that the given signal deadly for the process.
  * The process is identified by a pid stored in pidfile.
  * 
  * By default send USR2 witch is the default signal to gracefully
@@ -1065,91 +1065,122 @@ export namespace setProcessExitHandler {
  * If the pidfile exist but the process identified by pid does not
  * then the pidfile is suppressed. ( Assume write access on pidfile )
  * 
- * The function will hang until the process stop.
+ * If the service's process won't terminate within [delay_before_sigkill]
+ * a kill signal will be sent to the process group (PGID)
  * 
  */
 export function stopProcessSync(
     pidfile_path: string,
-    signal: NodeJS.Signals = "SIGUSR2"
+    signal: NodeJS.Signals = "SIGUSR2",
+    delay_before_sigkill = 5000
 ) {
 
     const log: typeof setProcessExitHandler.log = (...args) => stopProcessSync.log(
         `===stopProcessSync=== ${util.format.apply(util, args)}`
     );
 
-    log(`Called on pidfile ${pidfile_path}...`);
-
-    if (!stopProcessSync.isRunning(pidfile_path)) {
-        log("not running.");
+    if (!fs.existsSync(pidfile_path)) {
+        log("Pidfile does not exist, assuming process not running");
         return;
     }
 
-    log(`Sending signal ${signal}...`);
+    const cleanup = () => {
 
-    execSyncNoCmdTrace(
-        stopProcessSync.buildSendSignalCmd(pidfile_path, signal),
-        { "stdio": "pipe" }
-    );
+        if (fs.existsSync(pidfile_path)) {
 
-    let isFirstCheck = true;
+            log("Manually deleting pidfile");
 
-    while (stopProcessSync.isRunning(pidfile_path)) {
+            try { fs.unlinkSync(pidfile_path) } catch{ }
 
-        if (isFirstCheck) {
-            isFirstCheck = false;
-        } else {
-            log("Waiting for process to terminate.");
+        }
+    }
+
+    let pid: number;
+
+    try {
+
+        pid = parseInt(fs.readFileSync(pidfile_path).toString("utf8").replace(/\n$/, ""));
+
+        if (isNaN(pid)) {
+            throw new Error("pid is NaN");
         }
 
-        execSyncNoCmdTrace("sleep 0.5", { "stdio": "pipe" });
+    } catch{
+
+        log("Pidfile does does not contain pid");
+
+        cleanup();
+
+        return;
 
     }
 
-    log("Process terminated.");
+    let gpid: number;
+
+    try {
+
+        gpid= parseInt(
+            execSyncNoCmdTrace(
+                `ps --pid ${pid} -o pgid`,
+                { "stdio": "pipe" }
+            ).match(/([0-9]+)/)![1]
+        );
+
+    } catch{
+
+        log(`Master process not running`);
+
+        cleanup();
+
+        return;
+
+    }
+
+    const startTime = Date.now();
+
+    log(`Sending ${signal} to process ${pid}`);
+
+    try {
+
+        execSyncNoCmdTrace(
+            `kill -${signal} ${pid}`,
+            { "stdio": "pipe", "shell": "/bin/bash" }
+        );
+
+    } catch{ }
+
+    //While master process or any child is running...
+    while (sh_if(`kill -0 -${gpid}`)) {
+
+        if (Date.now() > startTime + delay_before_sigkill) {
+
+            log("Processes won't terminate gracefully, sending KILL signal...");
+
+            try {
+
+                //Send KILL signal to all the proc in the group..
+                execSyncNoCmdTrace(
+                    `kill -9 -${gpid}`,
+                    { "stdio": "pipe" }
+                );
+
+            } catch{ }
+
+            break;
+
+        }
+
+        execSyncNoCmdTrace("sleep 0.2", { "stdio": "pipe" });
+
+    }
+
+    log("All process terminated.");
+
+    cleanup();
 
 }
 
 export namespace stopProcessSync {
-
-
-    /** 
-     * Shell command to so send a pid signal to a process 
-     * Suitable for for systemd ExecStop=
-     * */
-    export function buildSendSignalCmd(
-        pidfile_path: string,
-        signal: NodeJS.Signals
-    ) {
-        return [
-            sh_eval("which pkill"),
-            `--pidfile ${pidfile_path}`,
-            `-${signal}`
-        ].join(" ");
-    }
-
-    /** 
-     * NOTE: Remove pidfile if process does not exist.
-     * Assume user have rw access wright one the pidfile.
-     * */
-    export function isRunning(
-        pidfile_path: string
-    ): boolean {
-
-        if (!fs.existsSync(pidfile_path)) {
-            return false;
-        }
-
-        const pid = parseInt(fs.readFileSync(pidfile_path).toString("utf8").replace(/\n$/, ""));
-
-        const doesProcessExist = sh_if(`kill -0 ${pid}`)
-
-        if (!doesProcessExist && fs.existsSync(pidfile_path)) {
-            fs.unlinkSync(pidfile_path);
-        }
-
-        return doesProcessExist;
-
-    }
 
     export let log: typeof console.log = () => { };
 
@@ -1173,7 +1204,9 @@ export namespace stopProcessSync {
  * The root process forward command line arguments and environnement variable to 
  * the daemon processes.
  * 
- * => rootProcess function should return: 
+ * srv_name: Name of the service to overwrite the process names. (Default: not overwriting)
+ * 
+ * => rootProcess function should return ( when not default ): 
  * -pidfile_path: where to store the pid of the root process.
  *      take to terminate after requested to exit gracefully.
  * -stop_timeout: The maximum amount of time ( in ms ) the the root process 
@@ -1230,6 +1263,7 @@ export namespace stopProcessSync {
  * 
  */
 export function createService(params: {
+    srv_name?: string,
     rootProcess(): Promise<{
         pidfile_path: string;
         stop_timeout?: number;
@@ -1247,7 +1281,7 @@ export function createService(params: {
         ) => Promise<void> | void;
     }>,
     daemonProcess(daemon_number: number, daemon_count: number): Promise<{
-        launch: ()=> any;
+        launch: () => any;
         beforeExitTask?: (error: Error | undefined) => Promise<void> | void;
     }>,
 }) {
@@ -1255,11 +1289,18 @@ export function createService(params: {
     const max_consecutive_restart = 300;
 
     const {
+        srv_name,
         rootProcess,
         daemonProcess,
     } = params;
 
     const main_root = async (main_js_path: string) => {
+
+        if (!!srv_name) {
+
+            process.title = `${srv_name} root process`;
+
+        }
 
         const {
             pidfile_path,
@@ -1291,7 +1332,7 @@ export function createService(params: {
             _daemon_count !== undefined ?
                 _daemon_count : 1;
 
-        if( assert_unix_user !== undefined && os.userInfo().username !== assert_unix_user ){
+        if (assert_unix_user !== undefined && os.userInfo().username !== assert_unix_user) {
 
             console.log(colorize(`Must be run as ${assert_unix_user}`, "RED"));
 
@@ -1310,7 +1351,7 @@ export function createService(params: {
 
         stopProcessSync.log = log;
 
-        stopProcessSync(pidfile_path, "SIGUSR2");
+        stopProcessSync(pidfile_path);
 
         if (fs.existsSync(pidfile_path)) {
             throw Error("Other instance launched simultaneously");
@@ -1644,16 +1685,22 @@ export function createService(params: {
 
         }
 
-    }
+    };
 
     const main_daemon = async () => {
 
         const [daemon_number, daemon_count, stop_timeout] =
             ["daemon_number", "daemon_count", "stop_timeout"].map(key => {
                 const value = parseInt(process.env[key]!);
-                delete process[key];
+                delete process.env[key];
                 return value;
             });
+
+        if (!!srv_name) {
+
+            process.title = `${srv_name} daemon ${daemon_number}`;
+
+        }
 
         const {
             launch,
@@ -1723,6 +1770,7 @@ export namespace systemd {
                 `[Service]`,
                 `ExecStart=${node_path} ${main_js_path}`,
                 `StandardOutput=inherit`,
+                `KillMode=process`,
                 `KillSignal=SIGUSR2`,
                 `SendSIGKILL=no`,
                 `Environment=NODE_ENV=production`,

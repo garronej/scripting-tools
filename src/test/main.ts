@@ -1,6 +1,7 @@
 import * as scriptLib from "../lib";
 
 scriptLib.createService({
+    "srv_name": "phony",
     "rootProcess": async () => {
 
         const path = await import("path");

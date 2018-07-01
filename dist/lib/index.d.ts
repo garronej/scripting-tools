@@ -279,7 +279,7 @@ export declare namespace setProcessExitHandler {
 /**
  *
  * Stop a process by sending a specific signal.
- * Assume that the given signal is supposed to be deadly for the process.
+ * Assume that the given signal deadly for the process.
  * The process is identified by a pid stored in pidfile.
  *
  * By default send USR2 witch is the default signal to gracefully
@@ -288,21 +288,12 @@ export declare namespace setProcessExitHandler {
  * If the pidfile exist but the process identified by pid does not
  * then the pidfile is suppressed. ( Assume write access on pidfile )
  *
- * The function will hang until the process stop.
+ * If the service's process won't terminate within [delay_before_sigkill]
+ * a kill signal will be sent to the process group (PGID)
  *
  */
-export declare function stopProcessSync(pidfile_path: string, signal?: NodeJS.Signals): void;
+export declare function stopProcessSync(pidfile_path: string, signal?: NodeJS.Signals, delay_before_sigkill?: number): void;
 export declare namespace stopProcessSync {
-    /**
-     * Shell command to so send a pid signal to a process
-     * Suitable for for systemd ExecStop=
-     * */
-    function buildSendSignalCmd(pidfile_path: string, signal: NodeJS.Signals): string;
-    /**
-     * NOTE: Remove pidfile if process does not exist.
-     * Assume user have rw access wright one the pidfile.
-     * */
-    function isRunning(pidfile_path: string): boolean;
     let log: typeof console.log;
 }
 /**
@@ -323,7 +314,9 @@ export declare namespace stopProcessSync {
  * The root process forward command line arguments and environnement variable to
  * the daemon processes.
  *
- * => rootProcess function should return:
+ * srv_name: Name of the service to overwrite the process names. (Default: not overwriting)
+ *
+ * => rootProcess function should return ( when not default ):
  * -pidfile_path: where to store the pid of the root process.
  *      take to terminate after requested to exit gracefully.
  * -stop_timeout: The maximum amount of time ( in ms ) the the root process
@@ -380,6 +373,7 @@ export declare namespace stopProcessSync {
  *
  */
 export declare function createService(params: {
+    srv_name?: string;
     rootProcess(): Promise<{
         pidfile_path: string;
         stop_timeout?: number;

@@ -869,7 +869,7 @@ exports.setProcessExitHandler = setProcessExitHandler;
 /**
  *
  * Stop a process by sending a specific signal.
- * Assume that the given signal is supposed to be deadly for the process.
+ * Assume that the given signal deadly for the process.
  * The process is identified by a pid stored in pidfile.
  *
  * By default send USR2 witch is the default signal to gracefully
@@ -878,11 +878,13 @@ exports.setProcessExitHandler = setProcessExitHandler;
  * If the pidfile exist but the process identified by pid does not
  * then the pidfile is suppressed. ( Assume write access on pidfile )
  *
- * The function will hang until the process stop.
+ * If the service's process won't terminate within [delay_before_sigkill]
+ * a kill signal will be sent to the process group (PGID)
  *
  */
-function stopProcessSync(pidfile_path, signal) {
+function stopProcessSync(pidfile_path, signal, delay_before_sigkill) {
     if (signal === void 0) { signal = "SIGUSR2"; }
+    if (delay_before_sigkill === void 0) { delay_before_sigkill = 5000; }
     var log = function () {
         var args = [];
         for (var _i = 0; _i < arguments.length; _i++) {
@@ -890,55 +892,64 @@ function stopProcessSync(pidfile_path, signal) {
         }
         return stopProcessSync.log("===stopProcessSync=== " + util.format.apply(util, args));
     };
-    log("Called on pidfile " + pidfile_path + "...");
-    if (!stopProcessSync.isRunning(pidfile_path)) {
-        log("not running.");
+    if (!fs.existsSync(pidfile_path)) {
+        log("Pidfile does not exist, assuming process not running");
         return;
     }
-    log("Sending signal " + signal + "...");
-    execSyncNoCmdTrace(stopProcessSync.buildSendSignalCmd(pidfile_path, signal), { "stdio": "pipe" });
-    var isFirstCheck = true;
-    while (stopProcessSync.isRunning(pidfile_path)) {
-        if (isFirstCheck) {
-            isFirstCheck = false;
+    var cleanup = function () {
+        if (fs.existsSync(pidfile_path)) {
+            log("Manually deleting pidfile");
+            try {
+                fs.unlinkSync(pidfile_path);
+            }
+            catch (_a) { }
         }
-        else {
-            log("Waiting for process to terminate.");
+    };
+    var pid;
+    try {
+        pid = parseInt(fs.readFileSync(pidfile_path).toString("utf8").replace(/\n$/, ""));
+        if (isNaN(pid)) {
+            throw new Error("pid is NaN");
         }
-        execSyncNoCmdTrace("sleep 0.5", { "stdio": "pipe" });
     }
-    log("Process terminated.");
+    catch (_a) {
+        log("Pidfile does does not contain pid");
+        cleanup();
+        return;
+    }
+    var gpid;
+    try {
+        gpid = parseInt(execSyncNoCmdTrace("ps --pid " + pid + " -o pgid", { "stdio": "pipe" }).match(/([0-9]+)/)[1]);
+    }
+    catch (_b) {
+        log("Master process not running");
+        cleanup();
+        return;
+    }
+    var startTime = Date.now();
+    log("Sending " + signal + " to process " + pid);
+    try {
+        execSyncNoCmdTrace("kill -" + signal + " " + pid, { "stdio": "pipe", "shell": "/bin/bash" });
+    }
+    catch (_c) { }
+    //While master process or any child is running...
+    while (sh_if("kill -0 -" + gpid)) {
+        if (Date.now() > startTime + delay_before_sigkill) {
+            log("Processes won't terminate gracefully, sending KILL signal...");
+            try {
+                //Send KILL signal to all the proc in the group..
+                execSyncNoCmdTrace("kill -9 -" + gpid, { "stdio": "pipe" });
+            }
+            catch (_d) { }
+            break;
+        }
+        execSyncNoCmdTrace("sleep 0.2", { "stdio": "pipe" });
+    }
+    log("All process terminated.");
+    cleanup();
 }
 exports.stopProcessSync = stopProcessSync;
 (function (stopProcessSync) {
-    /**
-     * Shell command to so send a pid signal to a process
-     * Suitable for for systemd ExecStop=
-     * */
-    function buildSendSignalCmd(pidfile_path, signal) {
-        return [
-            sh_eval("which pkill"),
-            "--pidfile " + pidfile_path,
-            "-" + signal
-        ].join(" ");
-    }
-    stopProcessSync.buildSendSignalCmd = buildSendSignalCmd;
-    /**
-     * NOTE: Remove pidfile if process does not exist.
-     * Assume user have rw access wright one the pidfile.
-     * */
-    function isRunning(pidfile_path) {
-        if (!fs.existsSync(pidfile_path)) {
-            return false;
-        }
-        var pid = parseInt(fs.readFileSync(pidfile_path).toString("utf8").replace(/\n$/, ""));
-        var doesProcessExist = sh_if("kill -0 " + pid);
-        if (!doesProcessExist && fs.existsSync(pidfile_path)) {
-            fs.unlinkSync(pidfile_path);
-        }
-        return doesProcessExist;
-    }
-    stopProcessSync.isRunning = isRunning;
     stopProcessSync.log = function () { };
 })(stopProcessSync = exports.stopProcessSync || (exports.stopProcessSync = {}));
 /**
@@ -959,7 +970,9 @@ exports.stopProcessSync = stopProcessSync;
  * The root process forward command line arguments and environnement variable to
  * the daemon processes.
  *
- * => rootProcess function should return:
+ * srv_name: Name of the service to overwrite the process names. (Default: not overwriting)
+ *
+ * => rootProcess function should return ( when not default ):
  * -pidfile_path: where to store the pid of the root process.
  *      take to terminate after requested to exit gracefully.
  * -stop_timeout: The maximum amount of time ( in ms ) the the root process
@@ -1018,13 +1031,17 @@ exports.stopProcessSync = stopProcessSync;
 function createService(params) {
     var _this = this;
     var max_consecutive_restart = 300;
-    var rootProcess = params.rootProcess, daemonProcess = params.daemonProcess;
+    var srv_name = params.srv_name, rootProcess = params.rootProcess, daemonProcess = params.daemonProcess;
     var main_root = function (main_js_path) { return __awaiter(_this, void 0, void 0, function () {
         var _a, pidfile_path, _stop_timeout, assert_unix_user, isQuiet, _doForwardDaemonStdout, daemon_unix_user, daemon_node_path, daemon_cwd, _daemon_restart_after_crash_delay, preForkTask, _daemon_count, stop_timeout, doForwardDaemonStdout, daemon_restart_after_crash_delay, daemon_count, log, daemonContexts, isTerminating, args, makeForkOptions, forkDaemon, daemon_number;
         var _this = this;
         return __generator(this, function (_b) {
             switch (_b.label) {
-                case 0: return [4 /*yield*/, rootProcess()];
+                case 0:
+                    if (!!srv_name) {
+                        process.title = srv_name + " root process";
+                    }
+                    return [4 /*yield*/, rootProcess()];
                 case 1:
                     _a = _b.sent(), pidfile_path = _a.pidfile_path, _stop_timeout = _a.stop_timeout, assert_unix_user = _a.assert_unix_user, isQuiet = _a.isQuiet, _doForwardDaemonStdout = _a.doForwardDaemonStdout, daemon_unix_user = _a.daemon_unix_user, daemon_node_path = _a.daemon_node_path, daemon_cwd = _a.daemon_cwd, _daemon_restart_after_crash_delay = _a.daemon_restart_after_crash_delay, preForkTask = _a.preForkTask, _daemon_count = _a.daemon_count;
                     stop_timeout = _stop_timeout !== undefined ?
@@ -1050,7 +1067,7 @@ function createService(params) {
                         }) :
                         (function () { });
                     stopProcessSync.log = log;
-                    stopProcessSync(pidfile_path, "SIGUSR2");
+                    stopProcessSync(pidfile_path);
                     if (fs.existsSync(pidfile_path)) {
                         throw Error("Other instance launched simultaneously");
                     }
@@ -1301,9 +1318,12 @@ function createService(params) {
                 case 0:
                     _a = __read(["daemon_number", "daemon_count", "stop_timeout"].map(function (key) {
                         var value = parseInt(process.env[key]);
-                        delete process[key];
+                        delete process.env[key];
                         return value;
                     }), 3), daemon_number = _a[0], daemon_count = _a[1], stop_timeout = _a[2];
+                    if (!!srv_name) {
+                        process.title = srv_name + " daemon " + daemon_number;
+                    }
                     return [4 /*yield*/, daemonProcess(daemon_number, daemon_count)];
                 case 1:
                     _b = _c.sent(), launch = _b.launch, beforeExitTask = _b.beforeExitTask;
@@ -1356,6 +1376,7 @@ var systemd;
             "[Service]",
             "ExecStart=" + node_path + " " + main_js_path,
             "StandardOutput=inherit",
+            "KillMode=process",
             "KillSignal=SIGUSR2",
             "SendSIGKILL=no",
             "Environment=NODE_ENV=production",
