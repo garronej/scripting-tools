@@ -1215,7 +1215,7 @@ function createService(params) {
                             return [get_uid(daemon_unix_user), get_gid(daemon_unix_user)];
                         }
                         else {
-                            [undefined, undefined];
+                            return [undefined, undefined];
                         }
                     })(), 2), daemon_uid = _b[0], daemon_gid = _b[1];
                     makeForkOptions = function (daemon_number) { return ({

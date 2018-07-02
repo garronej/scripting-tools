@@ -1295,7 +1295,6 @@ export function createService(params: {
 
     const main_root = async (main_js_path: string) => {
 
-
         const {
             pidfile_path,
             srv_name,
@@ -1311,13 +1310,11 @@ export function createService(params: {
             daemon_count: _daemon_count
         } = await rootProcess();
 
-
         if (srv_name !== undefined ) {
 
             process.title = `${srv_name} root process`;
 
         }
-
 
         const stop_timeout =
             _stop_timeout !== undefined ?
@@ -1551,7 +1548,7 @@ export function createService(params: {
             if( !!daemon_unix_user ){
                 return [get_uid(daemon_unix_user), get_gid(daemon_unix_user)];
             }else{
-                [undefined, undefined];
+                return [undefined, undefined];
             }
 
         })();
