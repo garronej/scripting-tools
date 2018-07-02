@@ -1418,7 +1418,7 @@ var systemd;
         if (!!stop) {
             execSyncNoCmdTrace("systemctl stop " + srv_name + " || true", { "stdio": "pipe" });
         }
-        execSyncNoCmdTrace("systemctl disable " + srv_name + " || true");
+        execSyncNoCmdTrace("systemctl disable " + srv_name + " || true", { "stdio": "pipe" });
         try {
             fs.unlinkSync(mkPath(srv_name));
         }

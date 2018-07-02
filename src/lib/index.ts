@@ -1833,7 +1833,7 @@ export namespace systemd {
 
         }
 
-        execSyncNoCmdTrace(`systemctl disable ${srv_name} || true`);
+        execSyncNoCmdTrace(`systemctl disable ${srv_name} || true`, { "stdio": "pipe" });
 
         try { fs.unlinkSync(mkPath(srv_name)); } catch{ }
 
