@@ -958,7 +958,8 @@ export function setProcessExitHandler(
 
         setTimeout(() => {
             log("Exit task timeout");
-            process_exit();
+            process.exitCode= 1;
+            process.exit();
         }, timeout);
 
         let actionOut: any;
@@ -1154,7 +1155,9 @@ export function stopProcessSync(
 
         if (Date.now() > startTime + delay_before_sigkill) {
 
-            log("Processes won't terminate gracefully, sending KILL signal...");
+            if( delay_before_sigkill !== 0 ){
+                log("Processes won't terminate gracefully, sending KILL signal to process group...");
+            }
 
             try {
 
