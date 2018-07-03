@@ -793,7 +793,8 @@ function setProcessExitHandler(task, timeout, shouldExitIf) {
                     log("Cause of process termination: ", exitCause);
                     setTimeout(function () {
                         log("Exit task timeout");
-                        process_exit();
+                        process.exitCode = 1;
+                        process.exit();
                     }, timeout);
                     try {
                         actionOut = task(exitCause);
@@ -868,23 +869,26 @@ exports.setProcessExitHandler = setProcessExitHandler;
 })(setProcessExitHandler = exports.setProcessExitHandler || (exports.setProcessExitHandler = {}));
 /**
  *
- * Stop a process by sending a specific signal.
- * Assume that the given signal deadly for the process.
- * The process is identified by a pid stored in pidfile.
+ * Stop a process by sending a specific signal to a master process id by it's PID.
+ * When the function return the main process and all it's descendent processes are terminated.
  *
- * By default send USR2 witch is the default signal to gracefully
- * terminate a service created with the createService function.
+ * The default signal is SIGUSR2 which is the signal used to gracefully terminate
+ * Process created by the createService function.
  *
- * If the pidfile exist but the process identified by pid does not
- * then the pidfile is suppressed. ( Assume write access on pidfile )
+ * Optionally runfiles_path can be provided to define a set of files
+ * that should be suppressed once before returning.
  *
- * If the service's process won't terminate within [delay_before_sigkill]
- * a kill signal will be sent to the process group (PGID)
+ * If pid is provided under the form of a pidfile path it will
+ * be added to the runfiles set.
+ *
+ * If all the processes does not terminate within [delay_before_sigkill]ms
+ * (default 50000) then KILL signal will be sent to all processes still alive.
  *
  */
-function stopProcessSync(pidfile_path, signal, delay_before_sigkill) {
+function stopProcessSync(pidfile_path_or_pid, signal, delay_before_sigkill, runfiles_path) {
     if (signal === void 0) { signal = "SIGUSR2"; }
     if (delay_before_sigkill === void 0) { delay_before_sigkill = 5000; }
+    if (runfiles_path === void 0) { runfiles_path = []; }
     var log = function () {
         var args = [];
         for (var _i = 0; _i < arguments.length; _i++) {
@@ -892,64 +896,237 @@ function stopProcessSync(pidfile_path, signal, delay_before_sigkill) {
         }
         return stopProcessSync.log("===stopProcessSync=== " + util.format.apply(util, args));
     };
-    if (!fs.existsSync(pidfile_path)) {
-        log("Pidfile does not exist, assuming process not running");
-        return;
-    }
-    var cleanup = function () {
-        if (fs.existsSync(pidfile_path)) {
-            log("Manually deleting pidfile");
-            try {
-                fs.unlinkSync(pidfile_path);
+    var cleanupRunfiles = function () {
+        var e_4, _a;
+        try {
+            for (var runfiles_path_1 = __values(runfiles_path), runfiles_path_1_1 = runfiles_path_1.next(); !runfiles_path_1_1.done; runfiles_path_1_1 = runfiles_path_1.next()) {
+                var runfile_path = runfiles_path_1_1.value;
+                if (fs.existsSync(runfile_path)) {
+                    try {
+                        fs.unlinkSync(runfile_path);
+                        log(path.basename(runfile_path) + " runfile manually cleaned up.");
+                    }
+                    catch (_b) {
+                        log(colorize("Could not remove runfile " + runfile_path, "RED"));
+                    }
+                }
             }
-            catch (_a) { }
+        }
+        catch (e_4_1) { e_4 = { error: e_4_1 }; }
+        finally {
+            try {
+                if (runfiles_path_1_1 && !runfiles_path_1_1.done && (_a = runfiles_path_1.return)) _a.call(runfiles_path_1);
+            }
+            finally { if (e_4) throw e_4.error; }
         }
     };
     var pid;
-    try {
-        pid = parseInt(fs.readFileSync(pidfile_path).toString("utf8").replace(/\n$/, ""));
-        if (isNaN(pid)) {
-            throw new Error("pid is NaN");
+    if (typeof pidfile_path_or_pid === "number") {
+        pid = pidfile_path_or_pid;
+    }
+    else {
+        var pidfile_path = pidfile_path_or_pid;
+        runfiles_path = __spread([pidfile_path], runfiles_path);
+        if (!fs.existsSync(pidfile_path)) {
+            log("Pidfile does not exist, assuming process not running");
+            cleanupRunfiles();
+            return;
         }
-    }
-    catch (_a) {
-        log("Pidfile does does not contain pid");
-        cleanup();
-        return;
-    }
-    var gpid;
-    try {
-        gpid = parseInt(execSyncNoCmdTrace("ps --pid " + pid + " -o pgid", { "stdio": "pipe" }).match(/([0-9]+)/)[1]);
-    }
-    catch (_b) {
-        log("Master process not running");
-        cleanup();
-        return;
-    }
-    var startTime = Date.now();
-    log("Sending " + signal + " to process " + pid);
-    try {
-        execSyncNoCmdTrace("kill -" + signal + " " + pid, { "stdio": "pipe", "shell": "/bin/bash" });
-    }
-    catch (_c) { }
-    //While master process or any child is running...
-    while (sh_if("kill -0 -" + gpid)) {
-        if (Date.now() > startTime + delay_before_sigkill) {
-            log("Processes won't terminate gracefully, sending KILL signal...");
-            try {
-                //Send KILL signal to all the proc in the group..
-                execSyncNoCmdTrace("kill -9 -" + gpid, { "stdio": "pipe" });
+        try {
+            pid = parseInt(fs.readFileSync(pidfile_path).toString("utf8").replace(/\n$/, ""));
+            if (isNaN(pid)) {
+                throw new Error("pid is NaN");
             }
-            catch (_d) { }
-            break;
         }
-        execSyncNoCmdTrace("sleep 0.2", { "stdio": "pipe" });
+        catch (_a) {
+            log("Pidfile does does not contain pid");
+            cleanupRunfiles();
+            return;
+        }
     }
-    log("All process terminated.");
-    cleanup();
+    var pids = __spread(stopProcessSync.getSubProcesses(pid, "FULL PROCESS TREE"), [
+        pid
+    ]);
+    var startTime = Date.now();
+    if (stopProcessSync.isProcessRunning(pid)) {
+        log("Sending " + signal + " to master process (" + pid + ")");
+        stopProcessSync.kill(pid, signal);
+    }
+    else {
+        log("Master process is not running");
+    }
+    var _loop_2 = function () {
+        var e_5, _a;
+        var runningPids = pids.filter(function (pid) { return stopProcessSync.isProcessRunning(pid); });
+        if (runningPids.length === 0) {
+            log("Master process and all it's sub processes are terminated");
+            return "break";
+        }
+        else if (Date.now() >= startTime + delay_before_sigkill) {
+            log((function () {
+                if (delay_before_sigkill === 0) {
+                    return "Immediately sending SIGKILL to " + runningPids.length + " remaining sub processes";
+                }
+                else {
+                    return [
+                        !!runningPids.find(function (_pid) { return _pid === pid; }) ?
+                            "Master process and " + (runningPids.length - 1) + " of it's sub processes" :
+                            runningPids.length + " sub processes of the master process",
+                        "did not terminate in time, sending KILL signals."
+                    ].join(" ");
+                }
+            })());
+            try {
+                for (var runningPids_1 = __values(runningPids), runningPids_1_1 = runningPids_1.next(); !runningPids_1_1.done; runningPids_1_1 = runningPids_1.next()) {
+                    var pid_1 = runningPids_1_1.value;
+                    stopProcessSync.kill(pid_1, "SIGKILL");
+                }
+            }
+            catch (e_5_1) { e_5 = { error: e_5_1 }; }
+            finally {
+                try {
+                    if (runningPids_1_1 && !runningPids_1_1.done && (_a = runningPids_1.return)) _a.call(runningPids_1);
+                }
+                finally { if (e_5) throw e_5.error; }
+            }
+            return "continue";
+        }
+        execSyncNoCmdTrace("sleep 0.1");
+    };
+    while (true) {
+        var state_1 = _loop_2();
+        if (state_1 === "break")
+            break;
+    }
+    cleanupRunfiles();
 }
 exports.stopProcessSync = stopProcessSync;
 (function (stopProcessSync) {
+    /**
+     * Stopping process As Soon As Possible,
+     * stopProcessSync with signal SIGKILL and timeout 0
+     * */
+    function stopProcessAsapSync(pidfile_path_or_pid, runfiles_path) {
+        if (runfiles_path === void 0) { runfiles_path = []; }
+        stopProcessSync(pidfile_path_or_pid, "SIGKILL", 0, runfiles_path);
+    }
+    stopProcessSync.stopProcessAsapSync = stopProcessAsapSync;
+    /**
+     * Terminate all child process of current process ASAP.
+     *
+     * NOTE: Directly after this function ( in the current tick )
+     * direct parents process that had sub processes will be Zombies.
+     * However they will be reaped by the current process on next tick.
+     *
+     */
+    function stopSubProcessesAsapSync() {
+        var e_6, _a;
+        try {
+            for (var _b = __values(getSubProcesses(process.pid, "DIRECT SUB PROCESSES ONLY")), _c = _b.next(); !_c.done; _c = _b.next()) {
+                var pid = _c.value;
+                stopProcessSync(pid, "SIGKILL", 0);
+            }
+        }
+        catch (e_6_1) { e_6 = { error: e_6_1 }; }
+        finally {
+            try {
+                if (_c && !_c.done && (_a = _b.return)) _a.call(_b);
+            }
+            finally { if (e_6) throw e_6.error; }
+        }
+    }
+    stopProcessSync.stopSubProcessesAsapSync = stopSubProcessesAsapSync;
+    /** Invoke kill, can't throw */
+    function kill(pid, signal) {
+        try {
+            execSyncNoCmdTrace("kill -" + signal + " " + pid, { "stdio": "pipe", "shell": "/bin/bash" });
+        }
+        catch (_a) {
+        }
+    }
+    stopProcessSync.kill = kill;
+    /**
+     * Get the list of subprocess of a process ( return a list of pid )
+     */
+    function getSubProcesses(pid, depth) {
+        var _a = child_process.spawnSync("/bin/ps", ["--ppid", "" + pid, "-o", "pid,state"], { "shell": false }), stdout = _a.stdout, ps_pid = _a.pid, ps_exitCode = _a.status;
+        if (ps_exitCode !== 0) {
+            return [];
+        }
+        var pids = stdout
+            .toString("utf8")
+            .split("\n")
+            .filter(function (v) { return !v.match(/Z/); })
+            .map(function (v) { return v.replace(/[^0-9]/g, ""); })
+            .filter(function (v) { return !!v; })
+            .map(function (v) { return parseInt(v); })
+            .filter(function (pid) { return pid !== ps_pid; });
+        switch (depth) {
+            case "DIRECT SUB PROCESSES ONLY": return pids;
+            case "FULL PROCESS TREE": return (function () {
+                var e_7, _a;
+                var out = [];
+                try {
+                    for (var pids_1 = __values(pids), pids_1_1 = pids_1.next(); !pids_1_1.done; pids_1_1 = pids_1.next()) {
+                        var pid_2 = pids_1_1.value;
+                        out = __spread(out, getSubProcesses(pid_2, "FULL PROCESS TREE"), [pid_2]);
+                    }
+                }
+                catch (e_7_1) { e_7 = { error: e_7_1 }; }
+                finally {
+                    try {
+                        if (pids_1_1 && !pids_1_1.done && (_a = pids_1.return)) _a.call(pids_1);
+                    }
+                    finally { if (e_7) throw e_7.error; }
+                }
+                return out;
+            })();
+        }
+    }
+    stopProcessSync.getSubProcesses = getSubProcesses;
+    /** Return true only if exist and is not a daemon */
+    function isProcessRunning(pid) {
+        var psCmdOut;
+        try {
+            psCmdOut = execSyncNoCmdTrace("ps --pid " + pid + " -o state");
+        }
+        catch (_a) {
+            return false;
+        }
+        return !psCmdOut.match(/Z/);
+    }
+    stopProcessSync.isProcessRunning = isProcessRunning;
+    /** Debug function to print the process tree of the current process. */
+    function _printProcessTree(log) {
+        if (log === void 0) { log = console.log.bind(console); }
+        var rec = function (node) {
+            var e_8, _a;
+            var pids = getSubProcesses(node.pid, "DIRECT SUB PROCESSES ONLY");
+            if (pids.length === 0) {
+                return;
+            }
+            node.sub = [];
+            try {
+                for (var pids_2 = __values(pids), pids_2_1 = pids_2.next(); !pids_2_1.done; pids_2_1 = pids_2.next()) {
+                    var pid = pids_2_1.value;
+                    var sub_node = { pid: pid };
+                    node.sub.push(sub_node);
+                    rec(sub_node);
+                }
+            }
+            catch (e_8_1) { e_8 = { error: e_8_1 }; }
+            finally {
+                try {
+                    if (pids_2_1 && !pids_2_1.done && (_a = pids_2.return)) _a.call(pids_2);
+                }
+                finally { if (e_8) throw e_8.error; }
+            }
+        };
+        var tree = { "pid": process.pid };
+        rec(tree);
+        log(JSON.stringify(tree, null, 3));
+    }
+    stopProcessSync._printProcessTree = _printProcessTree;
     stopProcessSync.log = function () { };
 })(stopProcessSync = exports.stopProcessSync || (exports.stopProcessSync = {}));
 /**
@@ -969,7 +1146,6 @@ exports.stopProcessSync = stopProcessSync;
  *
  * The root process forward command line arguments and environnement variable to
  * the daemon processes.
- *
  *
  * => rootProcess function should return ( when not default ):
  * -pidfile_path: where to store the pid of the root process.
@@ -1002,6 +1178,9 @@ exports.stopProcessSync = stopProcessSync;
  *      if when called it kill all the child processes then resolve once they are terminated.
  *      The to which the promise resolve will be used as exit code for the root process.
  *      Note that terminateSubProcess should never be called, it is a OUT parameter.
+ *      However if the implementation provided is just to send a SIGKILL to the forked processes
+ *      then there is no need to provide an implementation as all the root process's sub processes tree
+ *      will be killed before exiting anyway.
  *
  * => daemonProcess
  * It should return:
@@ -1101,7 +1280,7 @@ function createService(params) {
                                     isTerminating = true;
                                     return [4 /*yield*/, (function terminateAllChildProcesses() {
                                             return __awaiter(this, void 0, void 0, function () {
-                                                var e_4, _a, terminateDaemonProcess, terminatePreForkChildProcessesSafeCall, tasks, _loop_2, _b, _c, _d, daemonProcess_1, terminatePreForkChildProcesses;
+                                                var e_9, _a, terminateDaemonProcess, terminatePreForkChildProcessesSafeCall, tasks, _loop_3, _b, _c, _d, daemonProcess_1, terminatePreForkChildProcesses;
                                                 var _this = this;
                                                 return __generator(this, function (_e) {
                                                     switch (_e.label) {
@@ -1160,22 +1339,22 @@ function createService(params) {
                                                                 ]);
                                                             };
                                                             tasks = [];
-                                                            _loop_2 = function (daemonProcess_1, terminatePreForkChildProcesses) {
+                                                            _loop_3 = function (daemonProcess_1, terminatePreForkChildProcesses) {
                                                                 tasks[tasks.length] = !daemonProcess_1 ? (new Promise(function (resolve) { return terminatePreForkChildProcessesSafeCall(terminatePreForkChildProcesses.impl)
                                                                     .then(function (result) { return result === "SUCCESS" ? resolve(0) : resolve(1); }); })) : terminateDaemonProcess(daemonProcess_1);
                                                             };
                                                             try {
                                                                 for (_b = __values(daemonContexts.values()), _c = _b.next(); !_c.done; _c = _b.next()) {
                                                                     _d = _c.value, daemonProcess_1 = _d.daemonProcess, terminatePreForkChildProcesses = _d.terminatePreForkChildProcesses;
-                                                                    _loop_2(daemonProcess_1, terminatePreForkChildProcesses);
+                                                                    _loop_3(daemonProcess_1, terminatePreForkChildProcesses);
                                                                 }
                                                             }
-                                                            catch (e_4_1) { e_4 = { error: e_4_1 }; }
+                                                            catch (e_9_1) { e_9 = { error: e_9_1 }; }
                                                             finally {
                                                                 try {
                                                                     if (_c && !_c.done && (_a = _b.return)) _a.call(_b);
                                                                 }
-                                                                finally { if (e_4) throw e_4.error; }
+                                                                finally { if (e_9) throw e_9.error; }
                                                             }
                                                             return [4 /*yield*/, Promise.all(tasks)];
                                                         case 1: return [2 /*return*/, (_e.sent()).reduce(function (accumulator, currentValue) { return accumulator === 0 ? currentValue : accumulator; }, 0)];
@@ -1199,6 +1378,7 @@ function createService(params) {
                                     }
                                     fs.unlinkSync(pidfile_path);
                                     log("pidfile deleted");
+                                    stopProcessSync.stopSubProcessesAsapSync();
                                     return [2 /*return*/];
                             }
                         });

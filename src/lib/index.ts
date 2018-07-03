@@ -1056,134 +1056,328 @@ export namespace setProcessExitHandler {
 
 /**
  * 
- * Stop a process by sending a specific signal.
- * Assume that the given signal deadly for the process.
- * The process is identified by a pid stored in pidfile.
+ * Stop a process by sending a specific signal to a master process id by it's PID.
+ * When the function return the main process and all it's descendent processes are terminated.
  * 
- * By default send USR2 witch is the default signal to gracefully
- * terminate a service created with the createService function.
+ * The default signal is SIGUSR2 which is the signal used to gracefully terminate 
+ * Process created by the createService function.
  * 
- * If the pidfile exist but the process identified by pid does not
- * then the pidfile is suppressed. ( Assume write access on pidfile )
+ * Optionally runfiles_path can be provided to define a set of files
+ * that should be suppressed once before returning.
  * 
- * If the service's process won't terminate within [delay_before_sigkill]
- * a kill signal will be sent to the process group (PGID)
+ * If pid is provided under the form of a pidfile path it will
+ * be added to the runfiles set.
  * 
+ * If all the processes does not terminate within [delay_before_sigkill]ms 
+ * (default 50000) then KILL signal will be sent to all processes still alive.
+ *
  */
 export function stopProcessSync(
-    pidfile_path: string,
+    pidfile_path_or_pid: string | number,
     signal: NodeJS.Signals = "SIGUSR2",
-    delay_before_sigkill = 5000
+    delay_before_sigkill = 5000,
+    runfiles_path: string[] = []
 ) {
 
     const log: typeof setProcessExitHandler.log = (...args) => stopProcessSync.log(
         `===stopProcessSync=== ${util.format.apply(util, args)}`
     );
 
-    if (!fs.existsSync(pidfile_path)) {
-        log("Pidfile does not exist, assuming process not running");
-        return;
-    }
+    const cleanupRunfiles = () => {
 
-    const cleanup = () => {
+        for (const runfile_path of runfiles_path) {
 
-        if (fs.existsSync(pidfile_path)) {
+            if (fs.existsSync(runfile_path)) {
 
-            log("Manually deleting pidfile");
+                try {
 
-            try { fs.unlinkSync(pidfile_path) } catch{ }
+                    fs.unlinkSync(runfile_path);
+
+                    log(`${path.basename(runfile_path)} runfile manually cleaned up.`);
+
+                } catch{
+
+                    log(colorize(`Could not remove runfile ${runfile_path}`, "RED"));
+
+                }
+
+            }
 
         }
+
     }
 
     let pid: number;
 
-    try {
+    if (typeof pidfile_path_or_pid === "number") {
 
-        pid = parseInt(fs.readFileSync(pidfile_path).toString("utf8").replace(/\n$/, ""));
+        pid = pidfile_path_or_pid;
 
-        if (isNaN(pid)) {
-            throw new Error("pid is NaN");
+    } else {
+
+        const pidfile_path= pidfile_path_or_pid;
+
+        runfiles_path = [pidfile_path, ...runfiles_path];
+
+        if (!fs.existsSync(pidfile_path)) {
+
+            log("Pidfile does not exist, assuming process not running");
+
+            cleanupRunfiles();
+
+            return;
+
         }
 
-    } catch{
+        try {
 
-        log("Pidfile does does not contain pid");
+            pid = parseInt(fs.readFileSync(pidfile_path).toString("utf8").replace(/\n$/, ""));
 
-        cleanup();
+            if (isNaN(pid)) {
+                throw new Error("pid is NaN");
+            }
 
-        return;
+        } catch{
 
-    }
+            log("Pidfile does does not contain pid");
 
-    let gpid: number;
+            cleanupRunfiles();
 
-    try {
+            return;
 
-        gpid= parseInt(
-            execSyncNoCmdTrace(
-                `ps --pid ${pid} -o pgid`,
-                { "stdio": "pipe" }
-            ).match(/([0-9]+)/)![1]
-        );
-
-    } catch{
-
-        log(`Master process not running`);
-
-        cleanup();
-
-        return;
+        }
 
     }
+
+    const pids = [
+        ...stopProcessSync.getSubProcesses(pid, "FULL PROCESS TREE"),
+        pid
+    ];
 
     const startTime = Date.now();
 
-    log(`Sending ${signal} to process ${pid}`);
+    if (stopProcessSync.isProcessRunning(pid)) {
 
-    try {
+        log(`Sending ${signal} to master process (${pid})`);
 
-        execSyncNoCmdTrace(
-            `kill -${signal} ${pid}`,
-            { "stdio": "pipe", "shell": "/bin/bash" }
-        );
+        stopProcessSync.kill(pid, signal);
 
-    } catch{ }
+    } else {
 
-    //While master process or any child is running...
-    while (sh_if(`kill -0 -${gpid}`)) {
-
-        if (Date.now() > startTime + delay_before_sigkill) {
-
-            if( delay_before_sigkill !== 0 ){
-                log("Processes won't terminate gracefully, sending KILL signal to process group...");
-            }
-
-            try {
-
-                //Send KILL signal to all the proc in the group..
-                execSyncNoCmdTrace(
-                    `kill -9 -${gpid}`,
-                    { "stdio": "pipe" }
-                );
-
-            } catch{ }
-
-            break;
-
-        }
-
-        execSyncNoCmdTrace("sleep 0.2", { "stdio": "pipe" });
+        log(`Master process is not running`);
 
     }
 
-    log("All process terminated.");
 
-    cleanup();
+    while (true) {
+
+        const runningPids = pids.filter(
+            pid => stopProcessSync.isProcessRunning(pid)
+        );
+
+        if (runningPids.length === 0) {
+
+            log("Master process and all it's sub processes are terminated");
+
+            break;
+
+        } else if (Date.now() >= startTime + delay_before_sigkill) {
+
+            log((() => {
+
+                if (delay_before_sigkill === 0) {
+
+                    return `Immediately sending SIGKILL to ${runningPids.length} remaining sub processes`;
+
+                } else {
+
+                    return [
+                        !!runningPids.find(_pid => _pid === pid) ?
+                            `Master process and ${runningPids.length - 1} of it's sub processes` :
+                            `${runningPids.length} sub processes of the master process`,
+                        "did not terminate in time, sending KILL signals."
+                    ].join(" ");
+
+                }
+
+            })());
+
+            for (const pid of runningPids) {
+
+                stopProcessSync.kill(pid, "SIGKILL");
+
+            }
+
+            continue;
+
+        }
+
+        execSyncNoCmdTrace("sleep 0.1");
+
+    }
+
+    cleanupRunfiles();
 
 }
 
 export namespace stopProcessSync {
+
+    /** 
+     * Stopping process As Soon As Possible,
+     * stopProcessSync with signal SIGKILL and timeout 0 
+     * */
+    export function stopProcessAsapSync(
+        pidfile_path_or_pid: string | number,
+        runfiles_path: string[] = []
+    ) {
+
+        stopProcessSync(
+            pidfile_path_or_pid, "SIGKILL", 0, runfiles_path
+        );
+
+    }
+
+    /**
+     * Terminate all child process of current process ASAP.
+     * 
+     * NOTE: Directly after this function ( in the current tick ) 
+     * direct parents process that had sub processes will be Zombies.
+     * However they will be reaped by the current process on next tick.
+     * 
+     */
+    export function stopSubProcessesAsapSync() {
+
+        for (const pid of getSubProcesses(process.pid, "DIRECT SUB PROCESSES ONLY")) {
+
+            stopProcessSync(pid, "SIGKILL", 0);
+
+        }
+
+    }
+
+    /** Invoke kill, can't throw */
+    export function kill(pid: number, signal: NodeJS.Signals) {
+
+        try {
+
+            execSyncNoCmdTrace(
+                `kill -${signal} ${pid}`,
+                { "stdio": "pipe", "shell": "/bin/bash" }
+            );
+
+        } catch {
+
+        }
+
+    }
+
+    /** 
+     * Get the list of subprocess of a process ( return a list of pid )
+     */
+    export function getSubProcesses(
+        pid: number,
+        depth: "FULL PROCESS TREE" | "DIRECT SUB PROCESSES ONLY"
+    ): number[] {
+
+        const {
+            stdout,
+            pid: ps_pid,
+            status: ps_exitCode
+        } = child_process.spawnSync(
+            `/bin/ps`,
+            ["--ppid", `${pid}`, "-o", "pid,state"], { "shell": false }
+        );
+
+        if (ps_exitCode !== 0) {
+
+            return [];
+
+        }
+
+        const pids = stdout
+            .toString("utf8")
+            .split("\n")
+            .filter(v => !v.match(/Z/))
+            .map(v => v.replace(/[^0-9]/g, ""))
+            .filter(v => !!v)
+            .map(v => parseInt(v))
+            .filter(pid => pid !== ps_pid)
+            ;
+
+        switch (depth) {
+            case "DIRECT SUB PROCESSES ONLY": return pids;
+            case "FULL PROCESS TREE": return (() => {
+
+                let out: number[] = [];
+
+                for (const pid of pids) {
+
+                    out = [...out, ...getSubProcesses(pid, "FULL PROCESS TREE"), pid];
+
+                }
+
+                return out;
+
+            })();
+
+        }
+
+
+    }
+
+    /** Return true only if exist and is not a daemon */
+    export function isProcessRunning(pid: number): boolean {
+
+        let psCmdOut: string;
+
+        try {
+
+            psCmdOut = execSyncNoCmdTrace(`ps --pid ${pid} -o state`);
+
+        } catch{
+
+            return false;
+
+        }
+
+        return !psCmdOut.match(/Z/);
+
+    }
+
+    /** Debug function to print the process tree of the current process. */
+    export function _printProcessTree(log = console.log.bind(console)) {
+
+        type Node = { pid: number, sub?: Node[] };
+
+        const rec = (node: Node) => {
+
+            const pids = getSubProcesses(node.pid, "DIRECT SUB PROCESSES ONLY");
+
+            if (pids.length === 0) {
+                return;
+            }
+
+            node.sub = [];
+
+            for (const pid of pids) {
+
+                const sub_node: Node = { pid };
+
+                node.sub.push(sub_node);
+
+                rec(sub_node);
+
+            }
+
+        };
+
+        const tree: Node = { "pid": process.pid };
+
+        rec(tree);
+
+        log(JSON.stringify(tree, null, 3));
+
+    }
 
     export let log: typeof console.log = () => { };
 
@@ -1206,7 +1400,6 @@ export namespace stopProcessSync {
  * 
  * The root process forward command line arguments and environnement variable to 
  * the daemon processes.
- * 
  * 
  * => rootProcess function should return ( when not default ): 
  * -pidfile_path: where to store the pid of the root process.
@@ -1239,6 +1432,9 @@ export namespace stopProcessSync {
  *      if when called it kill all the child processes then resolve once they are terminated.
  *      The to which the promise resolve will be used as exit code for the root process.
  *      Note that terminateSubProcess should never be called, it is a OUT parameter.
+ *      However if the implementation provided is just to send a SIGKILL to the forked processes
+ *      then there is no need to provide an implementation as all the root process's sub processes tree
+ *      will be killed before exiting anyway.
  * 
  * => daemonProcess
  * It should return: 
@@ -1313,7 +1509,7 @@ export function createService(params: {
             daemon_count: _daemon_count
         } = await rootProcess();
 
-        if (srv_name !== undefined ) {
+        if (srv_name !== undefined) {
 
             process.title = `${srv_name} root process`;
 
@@ -1531,6 +1727,8 @@ export function createService(params: {
 
             log("pidfile deleted");
 
+            stopProcessSync.stopSubProcessesAsapSync();
+
         }, stop_timeout);
 
         setProcessExitHandler.log = log;
@@ -1546,11 +1744,11 @@ export function createService(params: {
 
         })();
 
-        const [ daemon_uid, daemon_gid ]= (()=>{
+        const [daemon_uid, daemon_gid] = (() => {
 
-            if( !!daemon_unix_user ){
+            if (!!daemon_unix_user) {
                 return [get_uid(daemon_unix_user), get_gid(daemon_unix_user)];
-            }else{
+            } else {
                 return [undefined, undefined];
             }
 
@@ -1708,24 +1906,24 @@ export function createService(params: {
                 delete process.env[key];
                 return value;
             });
-        
-        const srv_name= (()=>{
 
-            const key= "srv_name";
+        const srv_name = (() => {
 
-            const value= process.env[key]!;
+            const key = "srv_name";
+
+            const value = process.env[key]!;
 
             delete process.env[key];
 
-            if( value === `${undefined}` ){
+            if (value === `${undefined}`) {
                 return undefined;
-            }else{
+            } else {
                 return value;
             }
 
         })();
 
-        if( srv_name !== undefined ){
+        if (srv_name !== undefined) {
 
             process.title = `${srv_name} daemon ${daemon_number}`;
 

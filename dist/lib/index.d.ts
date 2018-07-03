@@ -278,22 +278,48 @@ export declare namespace setProcessExitHandler {
 }
 /**
  *
- * Stop a process by sending a specific signal.
- * Assume that the given signal deadly for the process.
- * The process is identified by a pid stored in pidfile.
+ * Stop a process by sending a specific signal to a master process id by it's PID.
+ * When the function return the main process and all it's descendent processes are terminated.
  *
- * By default send USR2 witch is the default signal to gracefully
- * terminate a service created with the createService function.
+ * The default signal is SIGUSR2 which is the signal used to gracefully terminate
+ * Process created by the createService function.
  *
- * If the pidfile exist but the process identified by pid does not
- * then the pidfile is suppressed. ( Assume write access on pidfile )
+ * Optionally runfiles_path can be provided to define a set of files
+ * that should be suppressed once before returning.
  *
- * If the service's process won't terminate within [delay_before_sigkill]
- * a kill signal will be sent to the process group (PGID)
+ * If pid is provided under the form of a pidfile path it will
+ * be added to the runfiles set.
+ *
+ * If all the processes does not terminate within [delay_before_sigkill]ms
+ * (default 50000) then KILL signal will be sent to all processes still alive.
  *
  */
-export declare function stopProcessSync(pidfile_path: string, signal?: NodeJS.Signals, delay_before_sigkill?: number): void;
+export declare function stopProcessSync(pidfile_path_or_pid: string | number, signal?: NodeJS.Signals, delay_before_sigkill?: number, runfiles_path?: string[]): void;
 export declare namespace stopProcessSync {
+    /**
+     * Stopping process As Soon As Possible,
+     * stopProcessSync with signal SIGKILL and timeout 0
+     * */
+    function stopProcessAsapSync(pidfile_path_or_pid: string | number, runfiles_path?: string[]): void;
+    /**
+     * Terminate all child process of current process ASAP.
+     *
+     * NOTE: Directly after this function ( in the current tick )
+     * direct parents process that had sub processes will be Zombies.
+     * However they will be reaped by the current process on next tick.
+     *
+     */
+    function stopSubProcessesAsapSync(): void;
+    /** Invoke kill, can't throw */
+    function kill(pid: number, signal: NodeJS.Signals): void;
+    /**
+     * Get the list of subprocess of a process ( return a list of pid )
+     */
+    function getSubProcesses(pid: number, depth: "FULL PROCESS TREE" | "DIRECT SUB PROCESSES ONLY"): number[];
+    /** Return true only if exist and is not a daemon */
+    function isProcessRunning(pid: number): boolean;
+    /** Debug function to print the process tree of the current process. */
+    function _printProcessTree(log?: any): void;
     let log: typeof console.log;
 }
 /**
@@ -313,7 +339,6 @@ export declare namespace stopProcessSync {
  *
  * The root process forward command line arguments and environnement variable to
  * the daemon processes.
- *
  *
  * => rootProcess function should return ( when not default ):
  * -pidfile_path: where to store the pid of the root process.
@@ -346,6 +371,9 @@ export declare namespace stopProcessSync {
  *      if when called it kill all the child processes then resolve once they are terminated.
  *      The to which the promise resolve will be used as exit code for the root process.
  *      Note that terminateSubProcess should never be called, it is a OUT parameter.
+ *      However if the implementation provided is just to send a SIGKILL to the forked processes
+ *      then there is no need to provide an implementation as all the root process's sub processes tree
+ *      will be killed before exiting anyway.
  *
  * => daemonProcess
  * It should return:
