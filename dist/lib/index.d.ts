@@ -356,7 +356,7 @@ export declare namespace stopProcessSync {
  * -daemon_restart_after_crash_delay?: ( Default to 500ms. )Delay in ms before restarting the daemon
  *      after it terminate without being requested to. If set to a negative number the daemons
  *      will not be restarted after it terminate for the first time and :
- *      If a daemon process exited with 0 and there is no other daemon process the root process
+ *      If all daemons process exited with 0 and there is no other daemon process the root process
  *      will end with a clean exit code.
  *      If any of the daemon exit with an unclean code the root process will be terminated with an error code
  *      even if there is some other daemon running.
