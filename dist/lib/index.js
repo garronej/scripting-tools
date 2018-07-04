@@ -742,7 +742,8 @@ exports.sh_if = sh_if;
  * The task function can be synchronous or asynchronous.
  * The task function has [timeout] ms to complete.
  * If it has not completed within this delay the process will
- * be terminated anyway.
+ * be terminated anyway. (Default 4000 ms )
+ * Setting [timeout] to a negative value will disable the timer.
  * WARNING: It is important not to perform sync operation that can
  * hang for a long time in the task function ( e.g. execSync("sleep 1000"); )
  * because while the sync operation are performed the timeout can't be triggered.
@@ -791,11 +792,13 @@ function setProcessExitHandler(task, timeout, shouldExitIf) {
                         process.exit();
                     };
                     log("Cause of process termination: ", exitCause);
-                    setTimeout(function () {
-                        log("Exit task timeout");
-                        process.exitCode = 1;
-                        process.exit();
-                    }, timeout);
+                    if (timeout >= 0) {
+                        setTimeout(function () {
+                            log("Exit task timeout");
+                            process.exitCode = 1;
+                            process.exit();
+                        }, timeout);
+                    }
                     try {
                         actionOut = task(exitCause);
                     }
@@ -1152,7 +1155,8 @@ exports.stopProcessSync = stopProcessSync;
  *      take to terminate after requested to exit gracefully.
  * -srv_name: Name of the service to overwrite the process names. (Default: not overwriting)
  * -stop_timeout: The maximum amount of time ( in ms ) the the root process
- *      is allowed to take for terminating. Defaults to 5000ms.
+ *      that beforeExitTask can take to complete before being killed by force by root process.
+ *      After receiving USR2 signal or CTRL, the root process has will be closed within [trop_timeout]+1000ms
  * -assert_unix_user: enforce that the main be called by a specific user.
  * -isQuiet?: set to true to disable root process debug info logging on stdout. ( default false )
  * -doForwardDaemonStdout?: set to true to forward everything the daemon
@@ -1290,31 +1294,31 @@ function createService(params) {
                                                                     return [2 /*return*/, new Promise(function (resolve) {
                                                                             log("Attempt to gracefully terminate daemon process...");
                                                                             daemonProcess.send(null);
-                                                                            var isKilled = false;
-                                                                            var timer = setTimeout(function () {
-                                                                                isKilled = true;
-                                                                                log("Daemon process not responding, sending KILL signal...");
-                                                                                daemonProcess.kill("SIGKILL");
-                                                                            }, (9 / 10) * stop_timeout);
-                                                                            var onTerminate = function (childProcessExitCode) {
-                                                                                log("Daemon process exited with code " + childProcessExitCode);
-                                                                                clearTimeout(timer);
-                                                                                resolve(childProcessExitCode);
-                                                                            };
+                                                                            var timer = setTimeout(function () { return doStopAsap(); }, stop_timeout + 500);
+                                                                            daemonProcess.once("error", function () { return doStopAsap(); });
                                                                             daemonProcess.once("close", function (childProcessExitCode) {
+                                                                                clearTimeout(timer);
+                                                                                log("Daemon process exited with code " + childProcessExitCode);
                                                                                 if (typeof childProcessExitCode !== "number" || isNaN(childProcessExitCode)) {
-                                                                                    childProcessExitCode = isKilled ? 1 : 0;
+                                                                                    childProcessExitCode = 1;
                                                                                 }
-                                                                                onTerminate(childProcessExitCode);
+                                                                                resolve(childProcessExitCode);
                                                                             });
-                                                                            daemonProcess.once("error", function () { return onTerminate(1); });
+                                                                            var doStopAsap = function () {
+                                                                                log("Daemon process not responding, force kill...");
+                                                                                clearTimeout(timer);
+                                                                                daemonProcess.removeAllListeners("error");
+                                                                                daemonProcess.removeAllListeners("close");
+                                                                                stopProcessSync.stopProcessAsapSync(daemonProcess.pid);
+                                                                                resolve(1);
+                                                                            };
                                                                         })];
                                                                 });
                                                             }); };
                                                             terminatePreForkChildProcessesSafeCall = function (impl) {
                                                                 var timer;
                                                                 return Promise.race([
-                                                                    new Promise(function (resolve) { return timer = setTimeout(function () { return resolve("TIMEOUT"); }, (16 / 17) * stop_timeout); }),
+                                                                    new Promise(function (resolve) { return timer = setTimeout(function () { return resolve("TIMEOUT"); }, stop_timeout + 500); }),
                                                                     (function () { return __awaiter(_this, void 0, void 0, function () {
                                                                         var result, _a;
                                                                         return __generator(this, function (_b) {
@@ -1382,7 +1386,7 @@ function createService(params) {
                                     return [2 /*return*/];
                             }
                         });
-                    }); }, stop_timeout);
+                    }); }, stop_timeout + 1000);
                     setProcessExitHandler.log = log;
                     args = (function () {
                         var out = __spread(process.argv);
@@ -1404,7 +1408,7 @@ function createService(params) {
                         "silent": true,
                         "cwd": daemon_cwd,
                         "execPath": daemon_node_path,
-                        "env": __assign({}, process.env, { daemon_number: daemon_number, daemon_count: daemon_count, stop_timeout: stop_timeout, srv_name: srv_name })
+                        "env": __assign({}, process.env, { daemon_number: daemon_number, daemon_count: daemon_count, srv_name: srv_name })
                     }); };
                     forkDaemon = function (daemon_number) { return __awaiter(_this, void 0, void 0, function () {
                         var context, error_5, daemonProcess;
@@ -1498,16 +1502,16 @@ function createService(params) {
         });
     }); };
     var main_daemon = function () { return __awaiter(_this, void 0, void 0, function () {
-        var _a, daemon_number, daemon_count, stop_timeout, srv_name, _b, launch, beforeExitTask;
+        var _a, daemon_number, daemon_count, srv_name, _b, launch, beforeExitTask;
         var _this = this;
         return __generator(this, function (_c) {
             switch (_c.label) {
                 case 0:
-                    _a = __read(["daemon_number", "daemon_count", "stop_timeout"].map(function (key) {
+                    _a = __read(["daemon_number", "daemon_count"].map(function (key) {
                         var value = parseInt(process.env[key]);
                         delete process.env[key];
                         return value;
-                    }), 3), daemon_number = _a[0], daemon_count = _a[1], stop_timeout = _a[2];
+                    }), 2), daemon_number = _a[0], daemon_count = _a[1];
                     srv_name = (function () {
                         var key = "srv_name";
                         var value = process.env[key];
@@ -1520,14 +1524,13 @@ function createService(params) {
                         }
                     })();
                     if (srv_name !== undefined) {
-                        process.title = srv_name + " daemon " + daemon_number;
+                        process.title = srv_name + " daemon " + (daemon_count === 0 ? "" : daemon_number);
                     }
                     return [4 /*yield*/, daemonProcess(daemon_number, daemon_count)];
                 case 1:
                     _b = _c.sent(), launch = _b.launch, beforeExitTask = _b.beforeExitTask;
                     process.once("message", function () { return process.emit("beforeExit", process.exitCode = 0); });
                     process.once("disconnect", function () { return process.exit(1); });
-                    //setProcessExitHandler.log = console.log.bind(console);
                     setProcessExitHandler(function (exitCause) { return __awaiter(_this, void 0, void 0, function () {
                         var error;
                         return __generator(this, function (_a) {
@@ -1542,7 +1545,7 @@ function createService(params) {
                                 case 2: return [2 /*return*/];
                             }
                         });
-                    }); }, (8 / 10) * stop_timeout, function (exitCause) { return exitCause.type !== "SIGNAL"; });
+                    }); }, -1, function (exitCause) { return exitCause.type !== "SIGNAL"; });
                     launch();
                     return [2 /*return*/];
             }

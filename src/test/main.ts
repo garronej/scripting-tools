@@ -133,6 +133,12 @@ scriptLib.createService({
             },
             "beforeExitTask": async error => {
 
+                /*
+                log("Hanging in before exit task");
+
+                await new Promise(resolve=>{});
+                */
+
                 if (!!error) {
 
                     log("Exiting because of an error:", error);

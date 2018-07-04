@@ -900,7 +900,8 @@ export function sh_if(cmd: string): boolean {
  * The task function can be synchronous or asynchronous.
  * The task function has [timeout] ms to complete.
  * If it has not completed within this delay the process will
- * be terminated anyway.
+ * be terminated anyway. (Default 4000 ms )
+ * Setting [timeout] to a negative value will disable the timer.
  * WARNING: It is important not to perform sync operation that can 
  * hang for a long time in the task function ( e.g. execSync("sleep 1000"); ) 
  * because while the sync operation are performed the timeout can't be triggered.
@@ -956,11 +957,15 @@ export function setProcessExitHandler(
 
         log("Cause of process termination: ", exitCause);
 
-        setTimeout(() => {
-            log("Exit task timeout");
-            process.exitCode= 1;
-            process.exit();
-        }, timeout);
+        if (timeout >= 0) {
+
+            setTimeout(() => {
+                log("Exit task timeout");
+                process.exitCode = 1;
+                process.exit();
+            }, timeout);
+
+        }
 
         let actionOut: any;
 
@@ -1115,7 +1120,7 @@ export function stopProcessSync(
 
     } else {
 
-        const pidfile_path= pidfile_path_or_pid;
+        const pidfile_path = pidfile_path_or_pid;
 
         runfiles_path = [pidfile_path, ...runfiles_path];
 
@@ -1406,7 +1411,8 @@ export namespace stopProcessSync {
  *      take to terminate after requested to exit gracefully.
  * -srv_name: Name of the service to overwrite the process names. (Default: not overwriting)
  * -stop_timeout: The maximum amount of time ( in ms ) the the root process 
- *      is allowed to take for terminating. Defaults to 5000ms.
+ *      that beforeExitTask can take to complete before being killed by force by root process.
+ *      After receiving USR2 signal or CTRL, the root process has will be closed within [trop_timeout]+1000ms
  * -assert_unix_user: enforce that the main be called by a specific user.
  * -isQuiet?: set to true to disable root process debug info logging on stdout. ( default false )
  * -doForwardDaemonStdout?: set to true to forward everything the daemon 
@@ -1611,39 +1617,41 @@ export function createService(params: {
 
                     daemonProcess.send(null);
 
-                    let isKilled = false;
+                    const timer = setTimeout(() => doStopAsap(), stop_timeout + 500);
 
-                    const timer = setTimeout(() => {
-
-                        isKilled = true;
-
-                        log("Daemon process not responding, sending KILL signal...");
-
-                        daemonProcess.kill("SIGKILL")
-
-                    }, (9 / 10) * stop_timeout);
-
-                    const onTerminate = (childProcessExitCode: number): void => {
-
-                        log(`Daemon process exited with code ${childProcessExitCode}`);
+                    daemonProcess.once("error", () => doStopAsap());
+                    
+                    daemonProcess.once("close", (childProcessExitCode: number | null) => {
 
                         clearTimeout(timer);
 
-                        resolve(childProcessExitCode);
-
-                    };
-
-                    daemonProcess.once("close", (childProcessExitCode: number | null) => {
+                        log(`Daemon process exited with code ${childProcessExitCode}`);
 
                         if (typeof childProcessExitCode !== "number" || isNaN(childProcessExitCode)) {
-                            childProcessExitCode = isKilled ? 1 : 0;
+                            childProcessExitCode = 1;
                         }
 
-                        onTerminate(childProcessExitCode);
+                        resolve(childProcessExitCode);
+
 
                     });
 
-                    daemonProcess.once("error", () => onTerminate(1));
+                    const doStopAsap= ()=>{
+
+                        log("Daemon process not responding, force kill...");
+
+                        clearTimeout(timer);
+
+                        daemonProcess.removeAllListeners("error");
+
+                        daemonProcess.removeAllListeners("close");
+
+                        stopProcessSync.stopProcessAsapSync(daemonProcess.pid);
+
+                        resolve(1);
+
+                    };
+
 
                 });
 
@@ -1655,7 +1663,7 @@ export function createService(params: {
                         new Promise<"TIMEOUT">(
                             resolve => timer = setTimeout(
                                 () => resolve("TIMEOUT"),
-                                (16 / 17) * stop_timeout
+                                stop_timeout + 500
                             )
                         ),
                         (async () => {
@@ -1729,7 +1737,7 @@ export function createService(params: {
 
             stopProcessSync.stopSubProcessesAsapSync();
 
-        }, stop_timeout);
+        }, stop_timeout + 1000);
 
         setProcessExitHandler.log = log;
 
@@ -1760,7 +1768,7 @@ export function createService(params: {
             "silent": true,
             "cwd": daemon_cwd,
             "execPath": daemon_node_path,
-            "env": { ...process.env, daemon_number, daemon_count, stop_timeout, srv_name }
+            "env": { ...process.env, daemon_number, daemon_count, srv_name }
         });
 
         const forkDaemon = async (daemon_number: number) => {
@@ -1900,8 +1908,8 @@ export function createService(params: {
 
     const main_daemon = async () => {
 
-        const [daemon_number, daemon_count, stop_timeout] =
-            ["daemon_number", "daemon_count", "stop_timeout"].map(key => {
+        const [daemon_number, daemon_count] =
+            ["daemon_number", "daemon_count"].map(key => {
                 const value = parseInt(process.env[key]!);
                 delete process.env[key];
                 return value;
@@ -1925,7 +1933,7 @@ export function createService(params: {
 
         if (srv_name !== undefined) {
 
-            process.title = `${srv_name} daemon ${daemon_number}`;
+            process.title = `${srv_name} daemon ${daemon_count === 0 ? "" : daemon_number}`;
 
         }
 
@@ -1938,8 +1946,6 @@ export function createService(params: {
 
         process.once("disconnect", () => process.exit(1));
 
-        //setProcessExitHandler.log = console.log.bind(console);
-
         setProcessExitHandler(
             async exitCause => {
 
@@ -1951,9 +1957,7 @@ export function createService(params: {
 
                 }
 
-            },
-            (8 / 10) * stop_timeout,
-            exitCause => exitCause.type !== "SIGNAL"
+            }, -1, exitCause => exitCause.type !== "SIGNAL"
         );
 
         launch();

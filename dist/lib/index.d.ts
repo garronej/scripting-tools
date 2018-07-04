@@ -230,7 +230,8 @@ export declare function sh_if(cmd: string): boolean;
  * The task function can be synchronous or asynchronous.
  * The task function has [timeout] ms to complete.
  * If it has not completed within this delay the process will
- * be terminated anyway.
+ * be terminated anyway. (Default 4000 ms )
+ * Setting [timeout] to a negative value will disable the timer.
  * WARNING: It is important not to perform sync operation that can
  * hang for a long time in the task function ( e.g. execSync("sleep 1000"); )
  * because while the sync operation are performed the timeout can't be triggered.
@@ -345,7 +346,8 @@ export declare namespace stopProcessSync {
  *      take to terminate after requested to exit gracefully.
  * -srv_name: Name of the service to overwrite the process names. (Default: not overwriting)
  * -stop_timeout: The maximum amount of time ( in ms ) the the root process
- *      is allowed to take for terminating. Defaults to 5000ms.
+ *      that beforeExitTask can take to complete before being killed by force by root process.
+ *      After receiving USR2 signal or CTRL, the root process has will be closed within [trop_timeout]+1000ms
  * -assert_unix_user: enforce that the main be called by a specific user.
  * -isQuiet?: set to true to disable root process debug info logging on stdout. ( default false )
  * -doForwardDaemonStdout?: set to true to forward everything the daemon
