@@ -250,6 +250,9 @@ export declare function sh_if(cmd: string): boolean;
  * Nothing else to do will always terminate the process.
  * By default exiting on any signal or uncaught errors.
  *
+ * Before exiting all subprocess will be killed.
+ *
+ *
  */
 export declare function setProcessExitHandler(task: (exitCause: setProcessExitHandler.ExitCause) => any, timeout?: number, shouldExitIf?: (exitCause: Exclude<setProcessExitHandler.ExitCause, setProcessExitHandler.ExitCause.NothingElseToDo>) => boolean): void;
 export declare namespace setProcessExitHandler {

@@ -919,6 +919,9 @@ export function sh_if(cmd: string): boolean {
  * Only exception and supported signals can be bypassed,
  * Nothing else to do will always terminate the process.
  * By default exiting on any signal or uncaught errors.
+ * 
+ * Before exiting all subprocess will be killed.
+ * 
  *
  */
 export function setProcessExitHandler(
@@ -947,9 +950,21 @@ export function setProcessExitHandler(
 
             if (typeof process.exitCode !== "number" || isNaN(process.exitCode)) {
 
-                process.exitCode = exitCause.type === "NOTHING ELSE TO DO" ? 0 : 1;
+                if( exitCause.type === "NOTHING ELSE TO DO") {
+
+                    process.exitCode= 0;
+
+                }else{
+
+                    log(`Exit cause ${exitCause.type} and not exitCode have been set, using exit code 1`);
+
+                    process.exitCode= 1;
+
+                }
 
             }
+
+            stopProcessSync.stopSubProcessesAsapSync();
 
             process.exit();
 
@@ -962,7 +977,7 @@ export function setProcessExitHandler(
             setTimeout(() => {
                 log("Exit task timeout");
                 process.exitCode = 1;
-                process.exit();
+                process_exit();
             }, timeout);
 
         }
@@ -1734,8 +1749,6 @@ export function createService(params: {
             fs.unlinkSync(pidfile_path);
 
             log("pidfile deleted");
-
-            stopProcessSync.stopSubProcessesAsapSync();
 
         }, stop_timeout + 1000);
 

@@ -762,6 +762,9 @@ exports.sh_if = sh_if;
  * Nothing else to do will always terminate the process.
  * By default exiting on any signal or uncaught errors.
  *
+ * Before exiting all subprocess will be killed.
+ *
+ *
  */
 function setProcessExitHandler(task, timeout, shouldExitIf) {
     var _this = this;
@@ -787,8 +790,15 @@ function setProcessExitHandler(task, timeout, shouldExitIf) {
                     handler = function (exitCause) { return log("Ignored extra exit cause", exitCause); };
                     process_exit = function () {
                         if (typeof process.exitCode !== "number" || isNaN(process.exitCode)) {
-                            process.exitCode = exitCause.type === "NOTHING ELSE TO DO" ? 0 : 1;
+                            if (exitCause.type === "NOTHING ELSE TO DO") {
+                                process.exitCode = 0;
+                            }
+                            else {
+                                log("Exit cause " + exitCause.type + " and not exitCode have been set, using exit code 1");
+                                process.exitCode = 1;
+                            }
                         }
+                        stopProcessSync.stopSubProcessesAsapSync();
                         process.exit();
                     };
                     log("Cause of process termination: ", exitCause);
@@ -796,7 +806,7 @@ function setProcessExitHandler(task, timeout, shouldExitIf) {
                         setTimeout(function () {
                             log("Exit task timeout");
                             process.exitCode = 1;
-                            process.exit();
+                            process_exit();
                         }, timeout);
                     }
                     try {
@@ -1382,7 +1392,6 @@ function createService(params) {
                                     }
                                     fs.unlinkSync(pidfile_path);
                                     log("pidfile deleted");
-                                    stopProcessSync.stopSubProcessesAsapSync();
                                     return [2 /*return*/];
                             }
                         });
