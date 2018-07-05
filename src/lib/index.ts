@@ -1965,7 +1965,7 @@ export function createService(params: {
 
         if (srv_name !== undefined) {
 
-            process.title = `${srv_name} daemon ${daemon_count === 0 ? "" : daemon_number}`;
+            process.title = `${srv_name} daemon ${daemon_count === 1 ? "" : daemon_number}`;
 
         }
 
