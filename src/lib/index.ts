@@ -6,6 +6,7 @@ import * as https from "https";
 import * as http from "http";
 import * as util from "util";
 import * as os from "os";
+import * as crypto from "crypto";
 
 /** 
  * After this function is called every call to execSync 
@@ -627,7 +628,18 @@ export async function download_and_extract_tarball(
 
     const { exec, onSuccess, onError } = start_long_running_process(`Downloading ${url} and extracting to ${dest_dir_path}`);
 
-    const tarball_dir_path = `/tmp/_${Buffer.from(url,"utf8").toString("hex")}`;
+    const tarball_dir_path= (()=>{
+
+        const hash = crypto.createHash("sha1");
+
+        hash.write(url);
+
+        hash.end();
+
+        return `/tmp/_${(hash.read() as Buffer).toString("hex")}`;
+
+    })();
+
     const tarball_path = `${tarball_dir_path}.tar.gz`;
 
     if( fs.existsSync(tarball_dir_path) || fs.existsSync(tarball_path) ){
@@ -644,7 +656,10 @@ export async function download_and_extract_tarball(
 
     }catch(error){
 
+        await exec(`rm -f ${tarball_path}`);
+
         onError("Download failed");
+
         throw error;
 
     }

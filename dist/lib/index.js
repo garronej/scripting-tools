@@ -81,6 +81,7 @@ var https = require("https");
 var http = require("http");
 var util = require("util");
 var os = require("os");
+var crypto = require("crypto");
 /**
  * After this function is called every call to execSync
  * or exec will print the unix commands being executed.
@@ -529,7 +530,12 @@ function download_and_extract_tarball(url, dest_dir_path, mode) {
             switch (_e.label) {
                 case 0:
                     _b = start_long_running_process("Downloading " + url + " and extracting to " + dest_dir_path), exec = _b.exec, onSuccess = _b.onSuccess, onError = _b.onError;
-                    tarball_dir_path = "/tmp/_" + Buffer.from(url, "utf8").toString("hex");
+                    tarball_dir_path = (function () {
+                        var hash = crypto.createHash("sha1");
+                        hash.write(url);
+                        hash.end();
+                        return "/tmp/_" + hash.read().toString("hex");
+                    })();
                     tarball_path = tarball_dir_path + ".tar.gz";
                     if (!(fs.existsSync(tarball_dir_path) || fs.existsSync(tarball_path))) return [3 /*break*/, 2];
                     return [4 /*yield*/, exec("rm -rf " + tarball_dir_path + " " + tarball_path)];
@@ -537,25 +543,28 @@ function download_and_extract_tarball(url, dest_dir_path, mode) {
                     _e.sent();
                     _e.label = 2;
                 case 2:
-                    _e.trys.push([2, 4, , 5]);
+                    _e.trys.push([2, 4, , 6]);
                     return [4 /*yield*/, web_get(url, tarball_path)];
                 case 3:
                     _e.sent();
-                    return [3 /*break*/, 5];
+                    return [3 /*break*/, 6];
                 case 4:
                     error_3 = _e.sent();
+                    return [4 /*yield*/, exec("rm -f " + tarball_path)];
+                case 5:
+                    _e.sent();
                     onError("Download failed");
                     throw error_3;
-                case 5: return [4 /*yield*/, exec("mkdir " + tarball_dir_path)];
-                case 6:
-                    _e.sent();
-                    return [4 /*yield*/, exec("tar -xzf " + tarball_path + " -C " + tarball_dir_path)];
+                case 6: return [4 /*yield*/, exec("mkdir " + tarball_dir_path)];
                 case 7:
                     _e.sent();
-                    return [4 /*yield*/, exec("rm " + tarball_path)];
+                    return [4 /*yield*/, exec("tar -xzf " + tarball_path + " -C " + tarball_dir_path)];
                 case 8:
                     _e.sent();
-                    if (!(mode === "MERGE")) return [3 /*break*/, 10];
+                    return [4 /*yield*/, exec("rm " + tarball_path)];
+                case 9:
+                    _e.sent();
+                    if (!(mode === "MERGE")) return [3 /*break*/, 11];
                     try {
                         for (_c = __values(fs_ls(tarball_dir_path)), _d = _c.next(); !_d.done; _d = _c.next()) {
                             name = _d.value;
@@ -570,13 +579,13 @@ function download_and_extract_tarball(url, dest_dir_path, mode) {
                         finally { if (e_1) throw e_1.error; }
                     }
                     return [4 /*yield*/, exec("rm -r " + tarball_dir_path)];
-                case 9:
-                    _e.sent();
-                    return [3 /*break*/, 11];
                 case 10:
-                    fs_move("MOVE", tarball_dir_path, dest_dir_path);
-                    _e.label = 11;
+                    _e.sent();
+                    return [3 /*break*/, 12];
                 case 11:
+                    fs_move("MOVE", tarball_dir_path, dest_dir_path);
+                    _e.label = 12;
+                case 12:
                     onSuccess();
                     return [2 /*return*/];
             }
