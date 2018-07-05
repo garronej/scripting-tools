@@ -675,7 +675,7 @@ export async function download_and_extract_tarball(
 
 }
 
-
+/** 10s of inactivity will trigger timeout */
 export function web_get(url: string, file_path: string): Promise<void>;
 export function web_get(url: string): Promise<string>;
 export function web_get(url: string, file_path?: string): Promise<string | void> {
@@ -716,9 +716,13 @@ export function web_get(url: string, file_path?: string): Promise<string | void>
 
                     const fsWriteStream= fs.createWriteStream(file_path);
 
+                    res.socket.setTimeout(10000, ()=>
+                        res.socket.destroy(new Error("Download timeout"))
+                    );
+
                     res.pipe(fsWriteStream);
 
-                    fsWriteStream.once("finish", ()=> resolve());
+                    fsWriteStream.once("finish", () => resolve());
 
                     res.once("error", error => reject(error));
 

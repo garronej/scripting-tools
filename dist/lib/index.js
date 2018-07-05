@@ -607,6 +607,9 @@ function web_get(url, file_path) {
             }
             if (!!file_path) {
                 var fsWriteStream = fs.createWriteStream(file_path);
+                res.socket.setTimeout(10000, function () {
+                    return res.socket.destroy(new Error("Download timeout"));
+                });
                 res.pipe(fsWriteStream);
                 fsWriteStream.once("finish", function () { return resolve(); });
                 res.once("error", function (error) { return reject(error); });

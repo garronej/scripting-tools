@@ -3,10 +3,7 @@ import * as path from "path";
 import * as fs from "fs";
 import * as i from "./get__filename";
 
-
-process.removeAllListeners("unhandledRejection");
 process.once("unhandledRejection", error => { throw error; });
-
 
 (async () => {
 

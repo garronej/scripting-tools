@@ -161,6 +161,7 @@ export declare function fs_move(action: "COPY" | "MOVE", relative_from_path_src:
  *
  */
 export declare function download_and_extract_tarball(url: string, dest_dir_path: string, mode: "MERGE" | "OVERWRITE IF EXIST"): Promise<void>;
+/** 10s of inactivity will trigger timeout */
 export declare function web_get(url: string, file_path: string): Promise<void>;
 export declare function web_get(url: string): Promise<string>;
 export declare function fs_ls(dir_path: string, mode?: "FILENAME" | "ABSOLUTE PATH", showHidden?: boolean): string[];
