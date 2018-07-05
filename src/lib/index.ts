@@ -1384,7 +1384,7 @@ export namespace stopProcessSync {
     }
 
     /** Debug function to print the process tree of the current process. */
-    export function _printProcessTree(log = console.log.bind(console)) {
+    export function _printProcessTree(log: typeof console.log = console.log.bind(console)) {
 
         type Node = { pid: number, sub?: Node[] };
 

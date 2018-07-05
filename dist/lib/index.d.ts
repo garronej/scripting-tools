@@ -324,7 +324,7 @@ export declare namespace stopProcessSync {
     /** Return true only if exist and is not a daemon */
     function isProcessRunning(pid: number): boolean;
     /** Debug function to print the process tree of the current process. */
-    function _printProcessTree(log?: any): void;
+    function _printProcessTree(log?: typeof console.log): void;
     let log: typeof console.log;
 }
 /**
