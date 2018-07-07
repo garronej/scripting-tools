@@ -891,6 +891,43 @@ export function sh_if(cmd: string): boolean {
 
 }
 
+/** 
+ * Return a promise that resolve as the source promise when fullfiled 
+ * or resolve with the error when reject.
+ * If a timeout is specified the returned promise resolve with an error after [timeout]ms
+ * if the source promise did not completed before.
+ * The message of the timeout error is safePr.timeoutErrorMessage
+ */
+export function safePr<T>(pr: Promise<T>, timeout?: number): Promise<T | Error> {
+
+    const prSafe = pr.then(val => val, error => error);
+
+    if (timeout !== undefined) {
+
+        let timer!: NodeJS.Timer;
+
+        return Promise.race([
+            new Promise<Error>(
+                resolve => timer = setTimeout(() => resolve(new Error(safePr.timeoutErrorMessage)), timeout)
+            ),
+            prSafe
+        ]);
+
+    } else {
+
+        return prSafe
+
+    }
+
+};
+
+export namespace safePr {
+
+    export const timeoutErrorMessage= "safePr timeout";
+
+
+}
+
 
 /**
  * 
@@ -969,15 +1006,15 @@ export function setProcessExitHandler(
 
             if (typeof process.exitCode !== "number" || isNaN(process.exitCode)) {
 
-                if( exitCause.type === "NOTHING ELSE TO DO") {
+                if (exitCause.type === "NOTHING ELSE TO DO") {
 
-                    process.exitCode= 0;
+                    process.exitCode = 0;
 
-                }else{
+                } else {
 
                     log(`Exit cause ${exitCause.type} and not exitCode have been set, using exit code 1`);
 
-                    process.exitCode= 1;
+                    process.exitCode = 1;
 
                 }
 
@@ -1654,7 +1691,7 @@ export function createService(params: {
                     const timer = setTimeout(() => doStopAsap(), stop_timeout + 500);
 
                     daemonProcess.once("error", () => doStopAsap());
-                    
+
                     daemonProcess.once("close", (childProcessExitCode: number | null) => {
 
                         clearTimeout(timer);
@@ -1670,7 +1707,7 @@ export function createService(params: {
 
                     });
 
-                    const doStopAsap= ()=>{
+                    const doStopAsap = () => {
 
                         log("Daemon process not responding, force kill...");
 

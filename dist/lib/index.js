@@ -728,6 +728,31 @@ function sh_if(cmd) {
 }
 exports.sh_if = sh_if;
 /**
+ * Return a promise that resolve as the source promise when fullfiled
+ * or resolve with the error when reject.
+ * If a timeout is specified the returned promise resolve with an error after [timeout]ms
+ * if the source promise did not completed before.
+ * The message of the timeout error is safePr.timeoutErrorMessage
+ */
+function safePr(pr, timeout) {
+    var prSafe = pr.then(function (val) { return val; }, function (error) { return error; });
+    if (timeout !== undefined) {
+        var timer_1;
+        return Promise.race([
+            new Promise(function (resolve) { return timer_1 = setTimeout(function () { return resolve(new Error(safePr.timeoutErrorMessage)); }, timeout); }),
+            prSafe
+        ]);
+    }
+    else {
+        return prSafe;
+    }
+}
+exports.safePr = safePr;
+;
+(function (safePr) {
+    safePr.timeoutErrorMessage = "safePr timeout";
+})(safePr = exports.safePr || (exports.safePr = {}));
+/**
  *
  * Allow to schedule action function to perform before exiting.
  *

@@ -205,6 +205,17 @@ export declare function sh_eval(cmd: string): string;
  */
 export declare function sh_if(cmd: string): boolean;
 /**
+ * Return a promise that resolve as the source promise when fullfiled
+ * or resolve with the error when reject.
+ * If a timeout is specified the returned promise resolve with an error after [timeout]ms
+ * if the source promise did not completed before.
+ * The message of the timeout error is safePr.timeoutErrorMessage
+ */
+export declare function safePr<T>(pr: Promise<T>, timeout?: number): Promise<T | Error>;
+export declare namespace safePr {
+    const timeoutErrorMessage = "safePr timeout";
+}
+/**
  *
  * Allow to schedule action function to perform before exiting.
  *

@@ -7,6 +7,27 @@ process.once("unhandledRejection", error => { throw error; });
 
 (async () => {
 
+    (()=>{
+
+        const obj= {};
+
+        scriptLib.safePr(Promise.resolve(obj)).then(v => console.assert(v === obj));
+
+    })();
+
+    (()=>{
+
+        const error= new Error();
+
+        scriptLib.safePr(Promise.reject(error)).then(v => console.assert(v === error));
+
+
+    })();
+
+    scriptLib.safePr(new Promise<void>(resolve=>{}), 0).then(v=> console.assert((v as Error).message === scriptLib.safePr.timeoutErrorMessage));
+
+    console.log("PASS safePr");
+
     console.assert(scriptLib.get__filename() === __filename);
 
     console.assert(i.get__filename() === __filename);
