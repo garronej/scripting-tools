@@ -378,6 +378,8 @@ export declare namespace stopProcessSync {
  *      If any of the daemon exit with an unclean code the root process will be terminated with an error code
  *      even if there is some other daemon running.
  * -daemon_count: Number of instance of daemon process that should be forked, default 1.
+ * -max_consecutive_restart: Number of time a daemon should be restarted after crashing right after start.
+ *      (Default ~Infinity).
  * -preForkTask: Task to perform before forking a daemon process.
  *      It is called just before forking the daemon process. ( called again on every restart. )
  *      If the function is async the daemon will not be forked until the returned promise resolve.
@@ -413,9 +415,6 @@ export declare namespace stopProcessSync {
  *        1) emit "beforeExit" on process setting the desired exit code ( process.emit("beforeExit", process.exitCode= X);
  *        2) throw an exception.
  *
- * If once of the daemon process is crashing over and over again the root process will eventually
- * be terminated to prevent waisting host resources.
- *
  */
 export declare function createService(params: {
     rootProcess(): Promise<{
@@ -430,6 +429,7 @@ export declare function createService(params: {
         daemon_cwd?: string;
         daemon_restart_after_crash_delay?: number;
         daemon_count?: number;
+        max_consecutive_restart?: number;
         preForkTask?: (terminateChildProcesses: {
             impl: () => Promise<void>;
         }, daemon_number: number) => Promise<void> | void;

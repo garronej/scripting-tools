@@ -1219,6 +1219,8 @@ exports.stopProcessSync = stopProcessSync;
  *      If any of the daemon exit with an unclean code the root process will be terminated with an error code
  *      even if there is some other daemon running.
  * -daemon_count: Number of instance of daemon process that should be forked, default 1.
+ * -max_consecutive_restart: Number of time a daemon should be restarted after crashing right after start.
+ *      (Default ~Infinity).
  * -preForkTask: Task to perform before forking a daemon process.
  *      It is called just before forking the daemon process. ( called again on every restart. )
  *      If the function is async the daemon will not be forked until the returned promise resolve.
@@ -1254,22 +1256,18 @@ exports.stopProcessSync = stopProcessSync;
  *        1) emit "beforeExit" on process setting the desired exit code ( process.emit("beforeExit", process.exitCode= X);
  *        2) throw an exception.
  *
- * If once of the daemon process is crashing over and over again the root process will eventually
- * be terminated to prevent waisting host resources.
- *
  */
 function createService(params) {
     var _this = this;
-    var max_consecutive_restart = 300;
     var rootProcess = params.rootProcess, daemonProcess = params.daemonProcess;
     var main_root = function (main_js_path) { return __awaiter(_this, void 0, void 0, function () {
-        var _a, pidfile_path, srv_name, _stop_timeout, assert_unix_user, isQuiet, _doForwardDaemonStdout, daemon_unix_user, daemon_node_path, daemon_cwd, _daemon_restart_after_crash_delay, preForkTask, _daemon_count, stop_timeout, doForwardDaemonStdout, daemon_restart_after_crash_delay, daemon_count, log, daemonContexts, isTerminating, args, _b, daemon_uid, daemon_gid, makeForkOptions, forkDaemon, daemon_number;
+        var _a, pidfile_path, srv_name, _stop_timeout, assert_unix_user, isQuiet, _doForwardDaemonStdout, daemon_unix_user, daemon_node_path, daemon_cwd, _daemon_restart_after_crash_delay, max_consecutive_restart, preForkTask, _daemon_count, stop_timeout, doForwardDaemonStdout, daemon_restart_after_crash_delay, daemon_count, log, daemonContexts, isTerminating, args, _b, daemon_uid, daemon_gid, makeForkOptions, forkDaemon, daemon_number;
         var _this = this;
         return __generator(this, function (_c) {
             switch (_c.label) {
                 case 0: return [4 /*yield*/, rootProcess()];
                 case 1:
-                    _a = _c.sent(), pidfile_path = _a.pidfile_path, srv_name = _a.srv_name, _stop_timeout = _a.stop_timeout, assert_unix_user = _a.assert_unix_user, isQuiet = _a.isQuiet, _doForwardDaemonStdout = _a.doForwardDaemonStdout, daemon_unix_user = _a.daemon_unix_user, daemon_node_path = _a.daemon_node_path, daemon_cwd = _a.daemon_cwd, _daemon_restart_after_crash_delay = _a.daemon_restart_after_crash_delay, preForkTask = _a.preForkTask, _daemon_count = _a.daemon_count;
+                    _a = _c.sent(), pidfile_path = _a.pidfile_path, srv_name = _a.srv_name, _stop_timeout = _a.stop_timeout, assert_unix_user = _a.assert_unix_user, isQuiet = _a.isQuiet, _doForwardDaemonStdout = _a.doForwardDaemonStdout, daemon_unix_user = _a.daemon_unix_user, daemon_node_path = _a.daemon_node_path, daemon_cwd = _a.daemon_cwd, _daemon_restart_after_crash_delay = _a.daemon_restart_after_crash_delay, max_consecutive_restart = _a.max_consecutive_restart, preForkTask = _a.preForkTask, _daemon_count = _a.daemon_count;
                     if (srv_name !== undefined) {
                         process.title = srv_name + " root process";
                     }
@@ -1316,7 +1314,7 @@ function createService(params) {
                             {
                                 "daemonProcess": undefined,
                                 "terminatePreForkChildProcesses": { "impl": function () { return Promise.resolve(); } },
-                                "restart_attempt_remaining": max_consecutive_restart,
+                                "restart_attempt_remaining": max_consecutive_restart || NaN,
                                 "reset_restart_attempt_timer": setTimeout(function () { }, 0)
                             }
                         ];
@@ -1483,7 +1481,9 @@ function createService(params) {
                                     if (isTerminating) {
                                         return [2 /*return*/];
                                     }
-                                    context.reset_restart_attempt_timer = setTimeout(function () { return context.restart_attempt_remaining = max_consecutive_restart; }, 10000);
+                                    if (max_consecutive_restart !== undefined) {
+                                        context.reset_restart_attempt_timer = setTimeout(function () { return context.restart_attempt_remaining = max_consecutive_restart; }, 10000);
+                                    }
                                     log("Forking daemon process number " + daemon_number + " now.");
                                     daemonProcess = child_process.fork(main_js_path, args, makeForkOptions(daemon_number));
                                     context.daemonProcess = daemonProcess;
@@ -1530,10 +1530,15 @@ function createService(params) {
                                             }
                                             return;
                                         }
-                                        if (context.restart_attempt_remaining-- === 0) {
-                                            throw new Error("Daemon process " + daemon_number + " is crashing over and over");
+                                        if (max_consecutive_restart !== undefined) {
+                                            if (context.restart_attempt_remaining-- === 0) {
+                                                throw new Error("Daemon process " + daemon_number + " is crashing over and over");
+                                            }
+                                            else {
+                                                log("Restart remaining: " + context.restart_attempt_remaining);
+                                            }
                                         }
-                                        log("Daemon process " + daemon_number + " will be restarted ( attempt remaining: " + context.restart_attempt_remaining + " )");
+                                        log("Daemon process " + daemon_number + " will be restarted");
                                         setTimeout(function () { return forkDaemon(daemon_number); }, daemon_restart_after_crash_delay);
                                     });
                                     return [2 /*return*/];

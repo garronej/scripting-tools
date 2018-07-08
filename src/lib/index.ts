@@ -1499,6 +1499,8 @@ export namespace stopProcessSync {
  *      If any of the daemon exit with an unclean code the root process will be terminated with an error code
  *      even if there is some other daemon running.
  * -daemon_count: Number of instance of daemon process that should be forked, default 1.
+ * -max_consecutive_restart: Number of time a daemon should be restarted after crashing right after start.
+ *      (Default ~Infinity).
  * -preForkTask: Task to perform before forking a daemon process.
  *      It is called just before forking the daemon process. ( called again on every restart. )
  *      If the function is async the daemon will not be forked until the returned promise resolve.
@@ -1534,9 +1536,6 @@ export namespace stopProcessSync {
  *        1) emit "beforeExit" on process setting the desired exit code ( process.emit("beforeExit", process.exitCode= X);
  *        2) throw an exception.
  * 
- * If once of the daemon process is crashing over and over again the root process will eventually
- * be terminated to prevent waisting host resources.
- * 
  */
 export function createService(params: {
     rootProcess(): Promise<{
@@ -1551,6 +1550,7 @@ export function createService(params: {
         daemon_cwd?: string;
         daemon_restart_after_crash_delay?: number;
         daemon_count?: number;
+        max_consecutive_restart?: number;
         preForkTask?: (
             terminateChildProcesses: { impl: () => Promise<void>; },
             daemon_number: number
@@ -1562,7 +1562,6 @@ export function createService(params: {
     }>,
 }) {
 
-    const max_consecutive_restart = 300;
 
     const {
         rootProcess,
@@ -1582,6 +1581,7 @@ export function createService(params: {
             daemon_node_path,
             daemon_cwd,
             daemon_restart_after_crash_delay: _daemon_restart_after_crash_delay,
+            max_consecutive_restart,
             preForkTask,
             daemon_count: _daemon_count
         } = await rootProcess();
@@ -1664,7 +1664,7 @@ export function createService(params: {
                         {
                             "daemonProcess": undefined,
                             "terminatePreForkChildProcesses": { "impl": () => Promise.resolve() },
-                            "restart_attempt_remaining": max_consecutive_restart,
+                            "restart_attempt_remaining": max_consecutive_restart || NaN,
                             "reset_restart_attempt_timer": setTimeout(() => { }, 0)
                         }
                     ];
@@ -1873,10 +1873,14 @@ export function createService(params: {
                 return;
             }
 
-            context.reset_restart_attempt_timer = setTimeout(
-                () => context.restart_attempt_remaining = max_consecutive_restart,
-                10000
-            );
+            if (max_consecutive_restart !== undefined) {
+
+                context.reset_restart_attempt_timer = setTimeout(
+                    () => context.restart_attempt_remaining = max_consecutive_restart,
+                    10000
+                );
+
+            }
 
             log(`Forking daemon process number ${daemon_number} now.`);
 
@@ -1953,13 +1957,22 @@ export function createService(params: {
 
                 }
 
-                if (context.restart_attempt_remaining-- === 0) {
 
-                    throw new Error(`Daemon process ${daemon_number} is crashing over and over`);
+                if (max_consecutive_restart !== undefined) {
+
+                    if (context.restart_attempt_remaining-- === 0) {
+
+                        throw new Error(`Daemon process ${daemon_number} is crashing over and over`);
+
+                    }else{
+
+                        log(`Restart remaining: ${context.restart_attempt_remaining}`);
+
+                    }
 
                 }
 
-                log(`Daemon process ${daemon_number} will be restarted ( attempt remaining: ${context.restart_attempt_remaining} )`);
+                log(`Daemon process ${daemon_number} will be restarted`);
 
                 setTimeout(() => forkDaemon(daemon_number), daemon_restart_after_crash_delay);
 
