@@ -835,7 +835,12 @@ function setProcessExitHandler(task, timeout, shouldExitIf) {
                                 process.exitCode = 1;
                             }
                         }
+                        else {
+                            log("Exit code have been set to " + process.exitCode);
+                        }
+                        log("Stopping subprocess asap if any...");
                         stopProcessSync.stopSubProcessesAsapSync();
+                        log("exiting now with code " + process.exitCode);
                         process.exit();
                     };
                     log("Cause of process termination: ", exitCause);

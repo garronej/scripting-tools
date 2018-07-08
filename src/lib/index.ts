@@ -1018,9 +1018,17 @@ export function setProcessExitHandler(
 
                 }
 
+            }else{
+
+                log(`Exit code have been set to ${process.exitCode}`);
+
             }
 
+            log(`Stopping subprocess asap if any...`);
+
             stopProcessSync.stopSubProcessesAsapSync();
+
+            log(`exiting now with code ${process.exitCode}`);
 
             process.exit();
 
