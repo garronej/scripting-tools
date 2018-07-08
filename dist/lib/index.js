@@ -202,6 +202,21 @@ function exec(cmd, options) {
 }
 exports.exec = exec;
 /**
+ * Spawn a process that continue running after current process exit.
+ * This process will be ignored by stopSubProcessesAsapSync.
+ * If a logfile_path if provided stdout and stderr will be redirected to this file.
+ *
+ * detached, and stdio options should not be set as they are set internally.
+ * */
+function spawnAndDetach(command, args, options, logfile_path) {
+    var out = !!logfile_path ? fs.openSync(logfile_path, "a") : "ignore";
+    var subprocess = child_process.spawn(command, args, __assign({}, (options || {}), { "detached": true, "stdio": ["ignore", out, out] }));
+    stopProcessSync.stopSubProcessesAsapSync.ignorePids.add(subprocess.pid);
+    subprocess.unref();
+    return subprocess;
+}
+exports.spawnAndDetach = spawnAndDetach;
+/**
  *
  * Print a message and enable a moving loading bar.
  * WARNING: Nothing should be printed to stdout until we stop showing the moving loading.
@@ -1079,6 +1094,9 @@ exports.stopProcessSync = stopProcessSync;
         try {
             for (var _b = __values(getSubProcesses(process.pid, "DIRECT SUB PROCESSES ONLY")), _c = _b.next(); !_c.done; _c = _b.next()) {
                 var pid = _c.value;
+                if (stopSubProcessesAsapSync.ignorePids.has(pid)) {
+                    continue;
+                }
                 stopProcessSync(pid, "SIGKILL", 0);
             }
         }
@@ -1091,6 +1109,9 @@ exports.stopProcessSync = stopProcessSync;
         }
     }
     stopProcessSync.stopSubProcessesAsapSync = stopSubProcessesAsapSync;
+    (function (stopSubProcessesAsapSync) {
+        stopSubProcessesAsapSync.ignorePids = new Set();
+    })(stopSubProcessesAsapSync = stopProcessSync.stopSubProcessesAsapSync || (stopProcessSync.stopSubProcessesAsapSync = {}));
     /** Invoke kill, can't throw */
     function kill(pid, signal) {
         try {

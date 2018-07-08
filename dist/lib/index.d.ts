@@ -45,6 +45,14 @@ export declare function execSyncQuiet(cmd: string, options?: child_process.ExecS
 /** Same as execSync but async */
 export declare function exec(cmd: string, options?: child_process.ExecOptions): Promise<string>;
 /**
+ * Spawn a process that continue running after current process exit.
+ * This process will be ignored by stopSubProcessesAsapSync.
+ * If a logfile_path if provided stdout and stderr will be redirected to this file.
+ *
+ * detached, and stdio options should not be set as they are set internally.
+ * */
+export declare function spawnAndDetach(command: string, args?: ReadonlyArray<string>, options?: child_process.SpawnOptions, logfile_path?: string): child_process.ChildProcess;
+/**
  *
  * Print a message and enable a moving loading bar.
  * WARNING: Nothing should be printed to stdout until we stop showing the moving loading.
@@ -326,6 +334,9 @@ export declare namespace stopProcessSync {
      *
      */
     function stopSubProcessesAsapSync(): void;
+    namespace stopSubProcessesAsapSync {
+        const ignorePids: Set<number>;
+    }
     /** Invoke kill, can't throw */
     function kill(pid: number, signal: NodeJS.Signals): void;
     /**

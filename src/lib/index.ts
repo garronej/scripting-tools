@@ -184,6 +184,37 @@ export function exec(
 
 }
 
+
+/** 
+ * Spawn a process that continue running after current process exit. 
+ * This process will be ignored by stopSubProcessesAsapSync.
+ * If a logfile_path if provided stdout and stderr will be redirected to this file.
+ * 
+ * detached, and stdio options should not be set as they are set internally.
+ * */
+export function spawnAndDetach(
+    command: string,
+    args?: ReadonlyArray<string>,
+    options?: child_process.SpawnOptions,
+    logfile_path?: string
+): child_process.ChildProcess {
+
+    const out = !!logfile_path ? fs.openSync(logfile_path, "a") : "ignore";
+
+    const subprocess = child_process.spawn(command, args, {
+        ...(options || {}),
+        "detached": true,
+        "stdio": ["ignore", out, out]
+    });
+
+    stopProcessSync.stopSubProcessesAsapSync.ignorePids.add(subprocess.pid);
+
+    subprocess.unref();
+
+    return subprocess;
+
+}
+
 /** 
  * 
  * Print a message and enable a moving loading bar.
@@ -483,7 +514,7 @@ export function fs_areSame(
     relative_to_path: string = "."
 ): boolean {
 
-    relative_to_path= fs_areSame.get_relative_to_path(
+    relative_to_path = fs_areSame.get_relative_to_path(
         relative_from_path1, relative_from_path2, relative_to_path
     );
 
@@ -628,7 +659,7 @@ export async function download_and_extract_tarball(
 
     const { exec, onSuccess, onError } = start_long_running_process(`Downloading ${url} and extracting to ${dest_dir_path}`);
 
-    const tarball_dir_path= (()=>{
+    const tarball_dir_path = (() => {
 
         const hash = crypto.createHash("sha1");
 
@@ -642,7 +673,7 @@ export async function download_and_extract_tarball(
 
     const tarball_path = `${tarball_dir_path}.tar.gz`;
 
-    if( fs.existsSync(tarball_dir_path) || fs.existsSync(tarball_path) ){
+    if (fs.existsSync(tarball_dir_path) || fs.existsSync(tarball_path)) {
 
         await exec(`rm -rf ${tarball_dir_path} ${tarball_path}`);
 
@@ -650,11 +681,11 @@ export async function download_and_extract_tarball(
 
     //execSyncNoCmdTrace(`wget -nc ${url} -q -O ${tarball_path}`);
 
-    try{
+    try {
 
         await web_get(url, tarball_path);
 
-    }catch(error){
+    } catch (error) {
 
         await exec(`rm -f ${tarball_path}`);
 
@@ -695,8 +726,8 @@ export function web_get(url: string, file_path: string): Promise<void>;
 export function web_get(url: string): Promise<string>;
 export function web_get(url: string, file_path?: string): Promise<string | void> {
 
-    if( !url.startsWith("http") ){
-        url= `http://${url}`;
+    if (!url.startsWith("http")) {
+        url = `http://${url}`;
     }
 
     if (!!file_path) {
@@ -706,15 +737,15 @@ export function web_get(url: string, file_path?: string): Promise<string | void>
     return new Promise(
         (resolve, reject) => {
 
-            const get: typeof https.get= url.startsWith("https")?https.get.bind(https):http.get.bind(http);
+            const get: typeof https.get = url.startsWith("https") ? https.get.bind(https) : http.get.bind(http);
 
             get(url, res => {
 
-                if ( `${res.statusCode}`.startsWith("30") ) {
+                if (`${res.statusCode}`.startsWith("30")) {
 
                     const { location: url } = res.headers;
 
-                    if( !url ){
+                    if (!url) {
                         reject(new Error("Missing redirect location"));
                         return;
                     }
@@ -729,9 +760,9 @@ export function web_get(url: string, file_path?: string): Promise<string | void>
 
                 if (!!file_path) {
 
-                    const fsWriteStream= fs.createWriteStream(file_path);
+                    const fsWriteStream = fs.createWriteStream(file_path);
 
-                    res.socket.setTimeout(10000, ()=>
+                    res.socket.setTimeout(10000, () =>
                         res.socket.destroy(new Error("Download timeout"))
                     );
 
@@ -741,7 +772,7 @@ export function web_get(url: string, file_path?: string): Promise<string | void>
 
                     res.once("error", error => reject(error));
 
-                    fsWriteStream.once("error", error=> reject(error));
+                    fsWriteStream.once("error", error => reject(error));
 
                 } else {
 
@@ -815,7 +846,7 @@ export function createScript(
 
 export namespace unixUser {
 
-    export function create(unix_user: string, home_dir_path: string= "/tmp") {
+    export function create(unix_user: string, home_dir_path: string = "/tmp") {
 
         execSyncNoCmdTrace(`useradd -M ${unix_user} -s /bin/false -d ${home_dir_path}`);
 
@@ -923,7 +954,7 @@ export function safePr<T>(pr: Promise<T>, timeout?: number): Promise<T | Error> 
 
 export namespace safePr {
 
-    export const timeoutErrorMessage= "safePr timeout";
+    export const timeoutErrorMessage = "safePr timeout";
 
 
 }
@@ -1018,7 +1049,7 @@ export function setProcessExitHandler(
 
                 }
 
-            }else{
+            } else {
 
                 log(`Exit code have been set to ${process.exitCode}`);
 
@@ -1333,9 +1364,23 @@ export namespace stopProcessSync {
 
         for (const pid of getSubProcesses(process.pid, "DIRECT SUB PROCESSES ONLY")) {
 
+            if (stopSubProcessesAsapSync.ignorePids.has(pid)) {
+                continue;
+            }
+
             stopProcessSync(pid, "SIGKILL", 0);
 
         }
+
+    }
+
+
+
+
+
+    export namespace stopSubProcessesAsapSync {
+
+        export const ignorePids = new Set<number>();
 
     }
 
@@ -1972,7 +2017,7 @@ export function createService(params: {
 
                         throw new Error(`Daemon process ${daemon_number} is crashing over and over`);
 
-                    }else{
+                    } else {
 
                         log(`Restart remaining: ${context.restart_attempt_remaining}`);
 
