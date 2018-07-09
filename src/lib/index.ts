@@ -1923,7 +1923,11 @@ export function createService(params: {
             }
 
             if (isTerminating) {
+
+                log("Not forking daemon because root process is terminating");
+
                 return;
+
             }
 
             if (max_consecutive_restart !== undefined) {

@@ -1505,6 +1505,7 @@ function createService(params) {
                                     _a.label = 5;
                                 case 5:
                                     if (isTerminating) {
+                                        log("Not forking daemon because root process is terminating");
                                         return [2 /*return*/];
                                     }
                                     if (max_consecutive_restart !== undefined) {
