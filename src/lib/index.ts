@@ -735,11 +735,37 @@ export function web_get(url: string, file_path?: string): Promise<string | void>
     }
 
     return new Promise(
-        (resolve, reject) => {
+        (_resolve, _reject) => {
 
             const get: typeof https.get = url.startsWith("https") ? https.get.bind(https) : http.get.bind(http);
 
-            get(url, res => {
+            const timeout= 10000;
+
+            const timer= setTimeout(()=> {
+
+                clientRequest.abort();
+
+                _reject(new Error("web_get timeout"));
+
+            }, timeout);
+
+            const reject= error=> {
+
+                clearTimeout(timer);
+
+                _reject(error);
+
+            };
+
+            const resolve= (...args)=> {
+
+                clearTimeout(timer);
+
+                _resolve.apply(null, args);
+
+            };
+
+            const clientRequest= get(url, res => {
 
                 if (`${res.statusCode}`.startsWith("30")) {
 
@@ -758,13 +784,13 @@ export function web_get(url: string, file_path?: string): Promise<string | void>
 
                 }
 
+                res.socket.setTimeout(timeout, () =>
+                    res.socket.destroy(new Error("web_get timeout (socket)"))
+                );
+
                 if (!!file_path) {
 
                     const fsWriteStream = fs.createWriteStream(file_path);
-
-                    res.socket.setTimeout(10000, () =>
-                        res.socket.destroy(new Error("Download timeout"))
-                    );
 
                     res.pipe(fsWriteStream);
 
@@ -785,7 +811,9 @@ export function web_get(url: string, file_path?: string): Promise<string | void>
                 }
 
 
-            }).once("error", error => reject(error));
+            });
+            
+            clientRequest.once("error", error => reject(error));
 
         }
     );
@@ -923,7 +951,7 @@ export function sh_if(cmd: string): boolean {
 }
 
 /** 
- * Return a promise that resolve as the source promise when fullfiled 
+ * Return a promise that resolve as the source promise when fulfilled 
  * or resolve with the error when reject.
  * If a timeout is specified the returned promise resolve with an error after [timeout]ms
  * if the source promise did not completed before.

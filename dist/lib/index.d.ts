@@ -213,7 +213,7 @@ export declare function sh_eval(cmd: string): string;
  */
 export declare function sh_if(cmd: string): boolean;
 /**
- * Return a promise that resolve as the source promise when fullfiled
+ * Return a promise that resolve as the source promise when fulfilled
  * or resolve with the error when reject.
  * If a timeout is specified the returned promise resolve with an error after [timeout]ms
  * if the source promise did not completed before.

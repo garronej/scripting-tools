@@ -615,9 +615,26 @@ function web_get(url, file_path) {
     if (!!file_path) {
         fs.writeFileSync(file_path, new Buffer(0));
     }
-    return new Promise(function (resolve, reject) {
+    return new Promise(function (_resolve, _reject) {
         var get = url.startsWith("https") ? https.get.bind(https) : http.get.bind(http);
-        get(url, function (res) {
+        var timeout = 10000;
+        var timer = setTimeout(function () {
+            clientRequest.abort();
+            _reject(new Error("web_get timeout"));
+        }, timeout);
+        var reject = function (error) {
+            clearTimeout(timer);
+            _reject(error);
+        };
+        var resolve = function () {
+            var args = [];
+            for (var _i = 0; _i < arguments.length; _i++) {
+                args[_i] = arguments[_i];
+            }
+            clearTimeout(timer);
+            _resolve.apply(null, args);
+        };
+        var clientRequest = get(url, function (res) {
             if (("" + res.statusCode).startsWith("30")) {
                 var url_1 = res.headers.location;
                 if (!url_1) {
@@ -629,11 +646,11 @@ function web_get(url, file_path) {
                     .catch(function (error) { return reject(error); });
                 return;
             }
+            res.socket.setTimeout(timeout, function () {
+                return res.socket.destroy(new Error("web_get timeout (socket)"));
+            });
             if (!!file_path) {
                 var fsWriteStream = fs.createWriteStream(file_path);
-                res.socket.setTimeout(10000, function () {
-                    return res.socket.destroy(new Error("Download timeout"));
-                });
                 res.pipe(fsWriteStream);
                 fsWriteStream.once("finish", function () { return resolve(); });
                 res.once("error", function (error) { return reject(error); });
@@ -644,7 +661,8 @@ function web_get(url, file_path) {
                 res.on("data", function (chunk) { return data_1 = Buffer.concat([data_1, chunk]); });
                 res.once("end", function () { return resolve(data_1.toString("utf8")); });
             }
-        }).once("error", function (error) { return reject(error); });
+        });
+        clientRequest.once("error", function (error) { return reject(error); });
     });
 }
 exports.web_get = web_get;
@@ -743,7 +761,7 @@ function sh_if(cmd) {
 }
 exports.sh_if = sh_if;
 /**
- * Return a promise that resolve as the source promise when fullfiled
+ * Return a promise that resolve as the source promise when fulfilled
  * or resolve with the error when reject.
  * If a timeout is specified the returned promise resolve with an error after [timeout]ms
  * if the source promise did not completed before.
