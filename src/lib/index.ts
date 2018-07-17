@@ -735,37 +735,24 @@ export function web_get(url: string, file_path?: string): Promise<string | void>
     }
 
     return new Promise(
-        (_resolve, _reject) => {
+        (resolve, reject) => {
 
-            const get: typeof https.get = url.startsWith("https") ? https.get.bind(https) : http.get.bind(http);
+            const get: typeof https.get = url.startsWith("https") ?
+                https.get.bind(https) : http.get.bind(http);
 
-            const timeout= 10000;
+            const timeout = 10000;
 
-            const timer= setTimeout(()=> {
+            const timer = setTimeout(() => {
 
                 clientRequest.abort();
 
-                _reject(new Error("web_get timeout"));
+                reject(new Error("web_get timeout"));
 
             }, timeout);
 
-            const reject= error=> {
+            const clientRequest = get(url, res => {
 
                 clearTimeout(timer);
-
-                _reject(error);
-
-            };
-
-            const resolve= (...args)=> {
-
-                clearTimeout(timer);
-
-                _resolve.apply(null, args);
-
-            };
-
-            const clientRequest= get(url, res => {
 
                 if (`${res.statusCode}`.startsWith("30")) {
 
@@ -812,8 +799,14 @@ export function web_get(url: string, file_path?: string): Promise<string | void>
 
 
             });
-            
-            clientRequest.once("error", error => reject(error));
+
+            clientRequest.once("error", error => {
+
+                clearTimeout(timer);
+
+                reject(error);
+
+            });
 
         }
     );

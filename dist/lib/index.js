@@ -615,26 +615,16 @@ function web_get(url, file_path) {
     if (!!file_path) {
         fs.writeFileSync(file_path, new Buffer(0));
     }
-    return new Promise(function (_resolve, _reject) {
-        var get = url.startsWith("https") ? https.get.bind(https) : http.get.bind(http);
+    return new Promise(function (resolve, reject) {
+        var get = url.startsWith("https") ?
+            https.get.bind(https) : http.get.bind(http);
         var timeout = 10000;
         var timer = setTimeout(function () {
             clientRequest.abort();
-            _reject(new Error("web_get timeout"));
+            reject(new Error("web_get timeout"));
         }, timeout);
-        var reject = function (error) {
-            clearTimeout(timer);
-            _reject(error);
-        };
-        var resolve = function () {
-            var args = [];
-            for (var _i = 0; _i < arguments.length; _i++) {
-                args[_i] = arguments[_i];
-            }
-            clearTimeout(timer);
-            _resolve.apply(null, args);
-        };
         var clientRequest = get(url, function (res) {
+            clearTimeout(timer);
             if (("" + res.statusCode).startsWith("30")) {
                 var url_1 = res.headers.location;
                 if (!url_1) {
@@ -662,7 +652,10 @@ function web_get(url, file_path) {
                 res.once("end", function () { return resolve(data_1.toString("utf8")); });
             }
         });
-        clientRequest.once("error", function (error) { return reject(error); });
+        clientRequest.once("error", function (error) {
+            clearTimeout(timer);
+            reject(error);
+        });
     });
 }
 exports.web_get = web_get;
