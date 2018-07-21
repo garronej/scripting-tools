@@ -342,7 +342,7 @@ function apt_get_install(package_name) {
                 case 1:
                     _b.trys.push([1, 5, , 6]);
                     if (!apt_get_install.isFirst) return [3 /*break*/, 3];
-                    return [4 /*yield*/, exec("apt-get update")];
+                    return [4 /*yield*/, exec("apt-get update || true")];
                 case 2:
                     _b.sent();
                     apt_get_install.isFirst = false;

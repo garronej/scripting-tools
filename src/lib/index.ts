@@ -383,7 +383,7 @@ export async function apt_get_install(package_name: string) {
 
         if (apt_get_install.isFirst) {
 
-            await exec("apt-get update");
+            await exec("apt-get update || true");
 
             apt_get_install.isFirst = false;
 
