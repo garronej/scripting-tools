@@ -1,4 +1,14 @@
 "use strict";
+var __extends = (this && this.__extends) || (function () {
+    var extendStatics = Object.setPrototypeOf ||
+        ({ __proto__: [] } instanceof Array && function (d, b) { d.__proto__ = b; }) ||
+        function (d, b) { for (var p in b) if (b.hasOwnProperty(p)) d[p] = b[p]; };
+    return function (d, b) {
+        extendStatics(d, b);
+        function __() { this.constructor = d; }
+        d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
+    };
+})();
 var __assign = (this && this.__assign) || Object.assign || function(t) {
     for (var s, i = 1, n = arguments.length; i < n; i++) {
         s = arguments[i];
@@ -512,7 +522,7 @@ function fs_move(action, relative_from_path_src, relative_from_path_dest, relati
 }
 exports.fs_move = fs_move;
 /**
- * Download and extract a tarball.
+ * Download and extract a tarball. throws web_get.DownloadError and Error
  *
  * Example
  *
@@ -558,28 +568,25 @@ function download_and_extract_tarball(url, dest_dir_path, mode) {
                     _e.sent();
                     _e.label = 2;
                 case 2:
-                    _e.trys.push([2, 4, , 6]);
+                    _e.trys.push([2, 4, , 5]);
                     return [4 /*yield*/, web_get(url, tarball_path)];
                 case 3:
                     _e.sent();
-                    return [3 /*break*/, 6];
+                    return [3 /*break*/, 5];
                 case 4:
                     error_3 = _e.sent();
-                    return [4 /*yield*/, exec("rm -f " + tarball_path)];
-                case 5:
-                    _e.sent();
-                    onError("Download failed");
+                    onError(error_3.message);
                     throw error_3;
-                case 6: return [4 /*yield*/, exec("mkdir " + tarball_dir_path)];
-                case 7:
+                case 5: return [4 /*yield*/, exec("mkdir " + tarball_dir_path)];
+                case 6:
                     _e.sent();
                     return [4 /*yield*/, exec("tar -xzf " + tarball_path + " -C " + tarball_dir_path)];
-                case 8:
+                case 7:
                     _e.sent();
                     return [4 /*yield*/, exec("rm " + tarball_path)];
-                case 9:
+                case 8:
                     _e.sent();
-                    if (!(mode === "MERGE")) return [3 /*break*/, 11];
+                    if (!(mode === "MERGE")) return [3 /*break*/, 10];
                     try {
                         for (_c = __values(fs_ls(tarball_dir_path)), _d = _c.next(); !_d.done; _d = _c.next()) {
                             name = _d.value;
@@ -594,13 +601,13 @@ function download_and_extract_tarball(url, dest_dir_path, mode) {
                         finally { if (e_1) throw e_1.error; }
                     }
                     return [4 /*yield*/, exec("rm -r " + tarball_dir_path)];
-                case 10:
+                case 9:
                     _e.sent();
-                    return [3 /*break*/, 12];
-                case 11:
+                    return [3 /*break*/, 11];
+                case 10:
                     fs_move("MOVE", tarball_dir_path, dest_dir_path);
-                    _e.label = 12;
-                case 12:
+                    _e.label = 11;
+                case 11:
                     onSuccess();
                     return [2 /*return*/];
             }
@@ -612,37 +619,34 @@ function web_get(url, file_path) {
     if (!url.startsWith("http")) {
         url = "http://" + url;
     }
-    if (!!file_path) {
-        fs.writeFileSync(file_path, new Buffer(0));
-    }
     return new Promise(function (resolve, reject) {
         var get = url.startsWith("https") ?
             https.get.bind(https) : http.get.bind(http);
         var timeout = 10000;
         var timer = setTimeout(function () {
             clientRequest.abort();
-            reject(new Error("web_get timeout"));
+            reject(new web_get.DownloadError(url, "CONNECTION ERROR", "web_get connection error:  timeout"));
         }, timeout);
         var clientRequest = get(url, function (res) {
             clearTimeout(timer);
             if (("" + res.statusCode).startsWith("30")) {
-                var url_1 = res.headers.location;
-                if (!url_1) {
-                    reject(new Error("Missing redirect location"));
+                var url_redirect = res.headers.location;
+                if (!!url_redirect) {
+                    web_get(url_redirect, file_path)
+                        .then(function (out) { return resolve(out); })
+                        .catch(function (error) { return reject(error); });
                     return;
                 }
-                web_get(url_1, file_path)
-                    .then(function (out) { return resolve(out); })
-                    .catch(function (error) { return reject(error); });
+            }
+            if (!("" + res.statusCode).startsWith("2")) {
+                reject(new web_get.DownloadErrorHttpErrorCode(url, res.statusCode));
                 return;
             }
-            res.socket.setTimeout(timeout, function () {
-                return res.socket.destroy(new Error("web_get timeout (socket)"));
-            });
+            var contentLength = undefined;
+            var receivedBytes = 0;
             if (res.headers["content-length"] !== undefined) {
-                var downloadedBytes_1 = 0;
-                var totalBytes_1 = parseInt(res.headers["content-length"]);
-                res.on("data", function (chunk) { return downloadedBytes_1 += chunk.length; });
+                contentLength = parseInt(res.headers["content-length"]);
+                res.on("data", function (chunk) { return receivedBytes += chunk.length; });
                 (function () {
                     var resolve_src = resolve;
                     resolve = function () {
@@ -650,14 +654,15 @@ function web_get(url, file_path) {
                         for (var _i = 0; _i < arguments.length; _i++) {
                             args[_i] = arguments[_i];
                         }
-                        if (downloadedBytes_1 !== totalBytes_1) {
-                            reject(new Error("Downloaded bytes and content-length mismatch"));
+                        if (receivedBytes !== contentLength) {
+                            reject(new web_get.DownloadErrorIncomplete(url, contentLength, receivedBytes));
                             return;
                         }
                         resolve_src.apply(null, args);
                     };
                 })();
             }
+            res.socket.setTimeout(timeout, function () { return res.socket.destroy(new web_get.DownloadErrorIncomplete(url, contentLength, receivedBytes, "socket timeout")); });
             if (!!file_path) {
                 (function () {
                     var reject_src = reject;
@@ -669,11 +674,12 @@ function web_get(url, file_path) {
                         return fs.unlink(file_path, function () { return reject_src.apply(null, args); });
                     };
                 })();
+                fs.writeFileSync(file_path, new Buffer(0));
                 var fsWriteStream = fs.createWriteStream(file_path);
                 res.pipe(fsWriteStream);
                 fsWriteStream.once("finish", function () { return resolve(); });
-                res.once("error", function (error) { return reject(error); });
-                fsWriteStream.once("error", function (error) { return reject(error); });
+                res.once("error", function (error) { return reject(new web_get.DownloadErrorIncomplete(url, contentLength, receivedBytes, error.message)); });
+                fsWriteStream.once("error", function (error) { return reject(new web_get.DownloadErrorIncomplete(url, contentLength, receivedBytes, error.message)); });
             }
             else {
                 var data_1 = new Buffer(0);
@@ -683,11 +689,51 @@ function web_get(url, file_path) {
         });
         clientRequest.once("error", function (error) {
             clearTimeout(timer);
-            reject(error);
+            reject(new web_get.DownloadError(url, "CONNECTION ERROR", error.message));
         });
     });
 }
 exports.web_get = web_get;
+(function (web_get) {
+    var DownloadError = /** @class */ (function (_super) {
+        __extends(DownloadError, _super);
+        function DownloadError(url, cause, message) {
+            var _newTarget = this.constructor;
+            var _this = _super.call(this, message) || this;
+            _this.url = url;
+            _this.cause = cause;
+            Object.setPrototypeOf(_this, _newTarget.prototype);
+            return _this;
+        }
+        return DownloadError;
+    }(Error));
+    web_get.DownloadError = DownloadError;
+    var DownloadErrorIncomplete = /** @class */ (function (_super) {
+        __extends(DownloadErrorIncomplete, _super);
+        function DownloadErrorIncomplete(url, contentLength, receivedBytes, info) {
+            var _newTarget = this.constructor;
+            var _this = _super.call(this, url, "INCOMPLETE", "web_get failed, download incomplete " + receivedBytes + "/" + contentLength + ", " + (!!info ? info : "")) || this;
+            _this.contentLength = contentLength;
+            _this.receivedBytes = receivedBytes;
+            Object.setPrototypeOf(_this, _newTarget.prototype);
+            return _this;
+        }
+        return DownloadErrorIncomplete;
+    }(DownloadError));
+    web_get.DownloadErrorIncomplete = DownloadErrorIncomplete;
+    var DownloadErrorHttpErrorCode = /** @class */ (function (_super) {
+        __extends(DownloadErrorHttpErrorCode, _super);
+        function DownloadErrorHttpErrorCode(url, code) {
+            var _newTarget = this.constructor;
+            var _this = _super.call(this, url, "HTTP ERROR CODE", "web_get failed, HTTP error code: " + code) || this;
+            _this.code = code;
+            Object.setPrototypeOf(_this, _newTarget.prototype);
+            return _this;
+        }
+        return DownloadErrorHttpErrorCode;
+    }(DownloadError));
+    web_get.DownloadErrorHttpErrorCode = DownloadErrorHttpErrorCode;
+})(web_get = exports.web_get || (exports.web_get = {}));
 function fs_ls(dir_path, mode, showHidden) {
     if (mode === void 0) { mode = "FILENAME"; }
     if (showHidden === void 0) { showHidden = false; }

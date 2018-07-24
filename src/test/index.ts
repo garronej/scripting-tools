@@ -46,9 +46,21 @@ process.once("unhandledRejection", error => { throw error; });
 
     scriptLib.execSync(`rm -f ${p_wget} ${p_node}`);
 
-    const url= "github.com/jquery/jquery/archive/3.3.1.tar.gz";
+    const url = "github.com/jquery/jquery/archive/3.3.1.tar.gz";
     //const url = "https://github.com/garronej/asterisk/releases/download/latest/asterisk_armv7l.tar.gz";
     //const url = "https://ubuntu-fr.org/telechargement?action=dl";
+
+    try {
+
+        //Should generate 404
+        await scriptLib.web_get("https://archive.raspberrypi.org/debian/pool/main/r/raspberrypi-firmware/libraspberrypi-bin_1.20121006-2_armhf.deb");
+
+    } catch (error) {
+
+        console.log("As expected: "  + error.message);
+
+    }
+
 
     let before = Date.now();
 

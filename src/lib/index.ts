@@ -625,7 +625,7 @@ export function fs_move(
 }
 
 /**
- * Download and extract a tarball.
+ * Download and extract a tarball. throws web_get.DownloadError and Error
  * 
  * Example 
  * 
@@ -687,9 +687,7 @@ export async function download_and_extract_tarball(
 
     } catch (error) {
 
-        await exec(`rm -f ${tarball_path}`);
-
-        onError("Download failed");
+        onError(error.message);
 
         throw error;
 
@@ -721,17 +719,13 @@ export async function download_and_extract_tarball(
 
 }
 
-/** 10s of inactivity will trigger timeout */
+/** 10s of inactivity will trigger timeout, throws DownloadError only */
 export function web_get(url: string, file_path: string): Promise<void>;
 export function web_get(url: string): Promise<string>;
 export function web_get(url: string, file_path?: string): Promise<string | void> {
 
     if (!url.startsWith("http")) {
         url = `http://${url}`;
-    }
-
-    if (!!file_path) {
-        fs.writeFileSync(file_path, new Buffer(0));
     }
 
     return new Promise(
@@ -746,42 +740,47 @@ export function web_get(url: string, file_path?: string): Promise<string | void>
 
                 clientRequest.abort();
 
-                reject(new Error("web_get timeout"));
+                reject(new web_get.DownloadError(url, "CONNECTION ERROR", "web_get connection error:  timeout"));
 
             }, timeout);
 
             const clientRequest = get(url, res => {
 
-
                 clearTimeout(timer);
 
                 if (`${res.statusCode}`.startsWith("30")) {
 
-                    const { location: url } = res.headers;
+                    const { location: url_redirect } = res.headers;
 
-                    if (!url) {
-                        reject(new Error("Missing redirect location"));
+                    if (!!url_redirect) {
+
+                        web_get(url_redirect, file_path!)
+                            .then(out => resolve(out))
+                            .catch(error => reject(error));
+
                         return;
+
                     }
 
-                    web_get(url, file_path!)
-                        .then(out => resolve(out))
-                        .catch(error => reject(error));
+
+                }
+
+                if (!`${res.statusCode}`.startsWith("2")) {
+
+                    reject(new web_get.DownloadErrorHttpErrorCode(url, res.statusCode!));
 
                     return;
 
                 }
 
-                res.socket.setTimeout(timeout, () =>
-                    res.socket.destroy(new Error("web_get timeout (socket)"))
-                );
+                let contentLength: number | undefined = undefined;
+                let receivedBytes = 0;
 
                 if (res.headers["content-length"] !== undefined) {
 
-                    let downloadedBytes = 0;
-                    const totalBytes = parseInt(res.headers["content-length"]!);
+                    contentLength = parseInt(res.headers["content-length"]!);
 
-                    res.on("data", chunk => downloadedBytes += chunk.length);
+                    res.on("data", chunk => receivedBytes += chunk.length);
 
                     (() => {
 
@@ -789,9 +788,9 @@ export function web_get(url: string, file_path?: string): Promise<string | void>
 
                         resolve = (...args) => {
 
-                            if (downloadedBytes !== totalBytes) {
+                            if (receivedBytes !== contentLength) {
 
-                                reject(new Error("Downloaded bytes and content-length mismatch"));
+                                reject(new web_get.DownloadErrorIncomplete(url, contentLength, receivedBytes));
 
                                 return;
 
@@ -805,6 +804,11 @@ export function web_get(url: string, file_path?: string): Promise<string | void>
 
                 }
 
+                res.socket.setTimeout(
+                    timeout, () => res.socket.destroy(
+                        new web_get.DownloadErrorIncomplete(url, contentLength, receivedBytes, "socket timeout")
+                    ));
+
                 if (!!file_path) {
 
                     (() => {
@@ -816,15 +820,21 @@ export function web_get(url: string, file_path?: string): Promise<string | void>
 
                     })();
 
+                    fs.writeFileSync(file_path, new Buffer(0));
+
                     const fsWriteStream = fs.createWriteStream(file_path);
 
                     res.pipe(fsWriteStream);
 
                     fsWriteStream.once("finish", () => resolve());
 
-                    res.once("error", error => reject(error));
+                    res.once("error", error => reject(
+                        new web_get.DownloadErrorIncomplete(url, contentLength, receivedBytes, error.message))
+                    );
 
-                    fsWriteStream.once("error", error => reject(error));
+                    fsWriteStream.once("error", error => reject(
+                        new web_get.DownloadErrorIncomplete(url, contentLength, receivedBytes, error.message))
+                    );
 
                 } else {
 
@@ -843,12 +853,55 @@ export function web_get(url: string, file_path?: string): Promise<string | void>
 
                 clearTimeout(timer);
 
-                reject(error);
+                reject(new web_get.DownloadError(url, "CONNECTION ERROR", error.message));
 
             });
 
         }
     );
+
+}
+
+export namespace web_get {
+
+    export class DownloadError extends Error {
+        constructor(
+            public readonly url: string,
+            public readonly cause: "CONNECTION ERROR" | "INCOMPLETE" | "HTTP ERROR CODE",
+            message: string
+        ) {
+            super(message);
+            Object.setPrototypeOf(this, new.target.prototype);
+        }
+
+    }
+
+    export class DownloadErrorIncomplete extends DownloadError {
+
+        constructor(
+            url: string,
+            public readonly contentLength: number | undefined,
+            public readonly receivedBytes: number,
+            info?: string
+        ) {
+            super(url, "INCOMPLETE", `web_get failed, download incomplete ${receivedBytes}/${contentLength}, ${!!info ? info : ""}`);
+            Object.setPrototypeOf(this, new.target.prototype);
+        }
+
+    }
+
+    export class DownloadErrorHttpErrorCode extends DownloadError {
+
+        constructor(
+            url: string,
+            public readonly code: number
+        ) {
+            super(url, "HTTP ERROR CODE", `web_get failed, HTTP error code: ${code}`);
+            Object.setPrototypeOf(this, new.target.prototype);
+        }
+
+    }
+
 
 }
 

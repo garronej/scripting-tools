@@ -142,7 +142,7 @@ export declare namespace fs_areSame {
  */
 export declare function fs_move(action: "COPY" | "MOVE", relative_from_path_src: string, relative_from_path_dest: string, relative_to_path?: string): void;
 /**
- * Download and extract a tarball.
+ * Download and extract a tarball. throws web_get.DownloadError and Error
  *
  * Example
  *
@@ -169,9 +169,25 @@ export declare function fs_move(action: "COPY" | "MOVE", relative_from_path_src:
  *
  */
 export declare function download_and_extract_tarball(url: string, dest_dir_path: string, mode: "MERGE" | "OVERWRITE IF EXIST"): Promise<void>;
-/** 10s of inactivity will trigger timeout */
+/** 10s of inactivity will trigger timeout, throws DownloadError only */
 export declare function web_get(url: string, file_path: string): Promise<void>;
 export declare function web_get(url: string): Promise<string>;
+export declare namespace web_get {
+    class DownloadError extends Error {
+        readonly url: string;
+        readonly cause: "CONNECTION ERROR" | "INCOMPLETE" | "HTTP ERROR CODE";
+        constructor(url: string, cause: "CONNECTION ERROR" | "INCOMPLETE" | "HTTP ERROR CODE", message: string);
+    }
+    class DownloadErrorIncomplete extends DownloadError {
+        readonly contentLength: number | undefined;
+        readonly receivedBytes: number;
+        constructor(url: string, contentLength: number | undefined, receivedBytes: number, info?: string);
+    }
+    class DownloadErrorHttpErrorCode extends DownloadError {
+        readonly code: number;
+        constructor(url: string, code: number);
+    }
+}
 export declare function fs_ls(dir_path: string, mode?: "FILENAME" | "ABSOLUTE PATH", showHidden?: boolean): string[];
 /**
  *
