@@ -639,7 +639,36 @@ function web_get(url, file_path) {
             res.socket.setTimeout(timeout, function () {
                 return res.socket.destroy(new Error("web_get timeout (socket)"));
             });
+            if (res.headers["content-length"] !== undefined) {
+                var downloadedBytes_1 = 0;
+                var totalBytes_1 = parseInt(res.headers["content-length"]);
+                res.on("data", function (chunk) { return downloadedBytes_1 += chunk.length; });
+                (function () {
+                    var resolve_src = resolve;
+                    resolve = function () {
+                        var args = [];
+                        for (var _i = 0; _i < arguments.length; _i++) {
+                            args[_i] = arguments[_i];
+                        }
+                        if (downloadedBytes_1 !== totalBytes_1) {
+                            reject(new Error("Downloaded bytes and content-length mismatch"));
+                            return;
+                        }
+                        resolve_src.apply(null, args);
+                    };
+                })();
+            }
             if (!!file_path) {
+                (function () {
+                    var reject_src = reject;
+                    reject = function () {
+                        var args = [];
+                        for (var _i = 0; _i < arguments.length; _i++) {
+                            args[_i] = arguments[_i];
+                        }
+                        return fs.unlink(file_path, function () { return reject_src.apply(null, args); });
+                    };
+                })();
                 var fsWriteStream = fs.createWriteStream(file_path);
                 res.pipe(fsWriteStream);
                 fsWriteStream.once("finish", function () { return resolve(); });

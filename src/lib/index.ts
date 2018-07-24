@@ -752,6 +752,7 @@ export function web_get(url: string, file_path?: string): Promise<string | void>
 
             const clientRequest = get(url, res => {
 
+
                 clearTimeout(timer);
 
                 if (`${res.statusCode}`.startsWith("30")) {
@@ -775,7 +776,45 @@ export function web_get(url: string, file_path?: string): Promise<string | void>
                     res.socket.destroy(new Error("web_get timeout (socket)"))
                 );
 
+                if (res.headers["content-length"] !== undefined) {
+
+                    let downloadedBytes = 0;
+                    const totalBytes = parseInt(res.headers["content-length"]!);
+
+                    res.on("data", chunk => downloadedBytes += chunk.length);
+
+                    (() => {
+
+                        const resolve_src = resolve;
+
+                        resolve = (...args) => {
+
+                            if (downloadedBytes !== totalBytes) {
+
+                                reject(new Error("Downloaded bytes and content-length mismatch"));
+
+                                return;
+
+                            }
+
+                            resolve_src.apply(null, args);
+
+                        };
+
+                    })();
+
+                }
+
                 if (!!file_path) {
+
+                    (() => {
+
+                        const reject_src = reject;
+
+                        reject = (...args) => fs.unlink(file_path, () => reject_src.apply(null, args));
+
+
+                    })();
 
                     const fsWriteStream = fs.createWriteStream(file_path);
 
