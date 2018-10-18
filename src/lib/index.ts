@@ -734,15 +734,13 @@ export function web_get(url: string, file_path?: string): Promise<string | void>
             const get: typeof https.get = url.startsWith("https") ?
                 https.get.bind(https) : http.get.bind(http);
 
-            const timeout = 10000;
-
             const timer = setTimeout(() => {
 
                 clientRequest.abort();
 
                 reject(new web_get.DownloadError(url, "CONNECTION ERROR", "web_get connection error:  timeout"));
 
-            }, timeout);
+            }, 20000);
 
             const clientRequest = get(url, res => {
 
@@ -805,9 +803,11 @@ export function web_get(url: string, file_path?: string): Promise<string | void>
                 }
 
                 res.socket.setTimeout(
-                    timeout, () => res.socket.destroy(
+                    60000,
+                    () => res.socket.destroy(
                         new web_get.DownloadErrorIncomplete(url, contentLength, receivedBytes, "socket timeout")
-                    ));
+                    )
+                );
 
                 if (!!file_path) {
 
@@ -1052,9 +1052,15 @@ export function safePr<T>(pr: Promise<T>, timeout?: number): Promise<T | Error> 
 
         return Promise.race([
             new Promise<Error>(
-                resolve => timer = setTimeout(() => resolve(new Error(safePr.timeoutErrorMessage)), timeout)
+                resolve => timer = setTimeout(
+                    () => resolve(new Error(safePr.timeoutErrorMessage)),
+                    timeout
+                )
             ),
-            prSafe
+            prSafe.then(val => {
+                clearTimeout(timer);
+                return val;
+            })
         ]);
 
     } else {

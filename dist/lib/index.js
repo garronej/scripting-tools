@@ -622,11 +622,10 @@ function web_get(url, file_path) {
     return new Promise(function (resolve, reject) {
         var get = url.startsWith("https") ?
             https.get.bind(https) : http.get.bind(http);
-        var timeout = 10000;
         var timer = setTimeout(function () {
             clientRequest.abort();
             reject(new web_get.DownloadError(url, "CONNECTION ERROR", "web_get connection error:  timeout"));
-        }, timeout);
+        }, 20000);
         var clientRequest = get(url, function (res) {
             clearTimeout(timer);
             if (("" + res.statusCode).startsWith("30")) {
@@ -662,7 +661,7 @@ function web_get(url, file_path) {
                     };
                 })();
             }
-            res.socket.setTimeout(timeout, function () { return res.socket.destroy(new web_get.DownloadErrorIncomplete(url, contentLength, receivedBytes, "socket timeout")); });
+            res.socket.setTimeout(60000, function () { return res.socket.destroy(new web_get.DownloadErrorIncomplete(url, contentLength, receivedBytes, "socket timeout")); });
             if (!!file_path) {
                 (function () {
                     var reject_src = reject;
@@ -841,7 +840,10 @@ function safePr(pr, timeout) {
         var timer_1;
         return Promise.race([
             new Promise(function (resolve) { return timer_1 = setTimeout(function () { return resolve(new Error(safePr.timeoutErrorMessage)); }, timeout); }),
-            prSafe
+            prSafe.then(function (val) {
+                clearTimeout(timer_1);
+                return val;
+            })
         ]);
     }
     else {
