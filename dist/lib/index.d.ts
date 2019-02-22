@@ -318,7 +318,7 @@ export declare namespace setProcessExitHandler {
 }
 /**
  *
- * Stop a process by sending a specific signal to a master process id by it's PID.
+ * Stop a process by sending a specific signal to a target process id by it's PID.
  * When the function return the main process and all it's descendent processes are terminated.
  *
  * The default signal is SIGUSR2 which is the signal used to gracefully terminate
@@ -391,7 +391,7 @@ export declare namespace stopProcessSync {
  *      that beforeExitTask can take to complete before being killed by force by root process.
  *      After receiving USR2 signal or CTRL, the root process will be closed within [trop_timeout]+1000ms
  * -assert_unix_user: enforce that the main be called by a specific user.
- * -isQuiet?: set to true to disable process debug info logging on stdout. ( default false )
+ * -isQuiet?: set to true to disable process debug info logging on stdout. Prefixed by [ service ]. ( default false )
  * -doForwardDaemonStdout?: set to true to forward everything the daemon
  *      process write to stdout to the root process stdout. ( default true )
  * -daemon_unix_user?: User who should own the daemon process.

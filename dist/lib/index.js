@@ -1,21 +1,27 @@
 "use strict";
 var __extends = (this && this.__extends) || (function () {
-    var extendStatics = Object.setPrototypeOf ||
-        ({ __proto__: [] } instanceof Array && function (d, b) { d.__proto__ = b; }) ||
-        function (d, b) { for (var p in b) if (b.hasOwnProperty(p)) d[p] = b[p]; };
+    var extendStatics = function (d, b) {
+        extendStatics = Object.setPrototypeOf ||
+            ({ __proto__: [] } instanceof Array && function (d, b) { d.__proto__ = b; }) ||
+            function (d, b) { for (var p in b) if (b.hasOwnProperty(p)) d[p] = b[p]; };
+        return extendStatics(d, b);
+    };
     return function (d, b) {
         extendStatics(d, b);
         function __() { this.constructor = d; }
         d.prototype = b === null ? Object.create(b) : (__.prototype = b.prototype, new __());
     };
 })();
-var __assign = (this && this.__assign) || Object.assign || function(t) {
-    for (var s, i = 1, n = arguments.length; i < n; i++) {
-        s = arguments[i];
-        for (var p in s) if (Object.prototype.hasOwnProperty.call(s, p))
-            t[p] = s[p];
-    }
-    return t;
+var __assign = (this && this.__assign) || function () {
+    __assign = Object.assign || function(t) {
+        for (var s, i = 1, n = arguments.length; i < n; i++) {
+            s = arguments[i];
+            for (var p in s) if (Object.prototype.hasOwnProperty.call(s, p))
+                t[p] = s[p];
+        }
+        return t;
+    };
+    return __assign.apply(this, arguments);
 };
 var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
     return new (P || (P = Promise))(function (resolve, reject) {
@@ -916,7 +922,7 @@ function setProcessExitHandler(task, timeout, shouldExitIf) {
         for (var _i = 0; _i < arguments.length; _i++) {
             args[_i] = arguments[_i];
         }
-        return setProcessExitHandler.log("===exitHandler=== " + util.format.apply(util, args));
+        return setProcessExitHandler.log("[ exit handler ] " + util.format.apply(util, args));
     };
     var handler = function (exitCause) { return __awaiter(_this, void 0, void 0, function () {
         var process_exit, actionOut, error_4;
@@ -924,7 +930,7 @@ function setProcessExitHandler(task, timeout, shouldExitIf) {
             switch (_a.label) {
                 case 0:
                     if (exitCause.type !== "NOTHING ELSE TO DO" && !shouldExitIf(exitCause)) {
-                        log("Choosing to not terminating the process despite: ", exitCause);
+                        log("Choosing ( c.f shouldExitIf ) not to terminate the process despite: ", exitCause);
                         return [2 /*return*/];
                     }
                     handler = function (exitCause) { return log("Ignored extra exit cause", exitCause); };
@@ -1027,7 +1033,7 @@ exports.setProcessExitHandler = setProcessExitHandler;
 })(setProcessExitHandler = exports.setProcessExitHandler || (exports.setProcessExitHandler = {}));
 /**
  *
- * Stop a process by sending a specific signal to a master process id by it's PID.
+ * Stop a process by sending a specific signal to a target process id by it's PID.
  * When the function return the main process and all it's descendent processes are terminated.
  *
  * The default signal is SIGUSR2 which is the signal used to gracefully terminate
@@ -1052,7 +1058,7 @@ function stopProcessSync(pidfile_path_or_pid, signal, delay_before_sigkill, runf
         for (var _i = 0; _i < arguments.length; _i++) {
             args[_i] = arguments[_i];
         }
-        return stopProcessSync.log("===stopProcessSync=== " + util.format.apply(util, args));
+        return stopProcessSync.log("[ stop process sync ] " + util.format.apply(util, args));
     };
     var cleanupRunfiles = function () {
         var e_4, _a;
@@ -1107,29 +1113,29 @@ function stopProcessSync(pidfile_path_or_pid, signal, delay_before_sigkill, runf
     ]);
     var startTime = Date.now();
     if (stopProcessSync.isProcessRunning(pid)) {
-        log("Sending " + signal + " to master process (" + pid + ")");
+        log("Sending " + signal + " to target process (" + pid + ")");
         stopProcessSync.kill(pid, signal);
     }
     else {
-        log("Master process is not running");
+        log("Target process (" + pid + ") is not running");
     }
     var _loop_2 = function () {
         var e_5, _a;
         var runningPids = pids.filter(function (pid) { return stopProcessSync.isProcessRunning(pid); });
         if (runningPids.length === 0) {
-            log("Master process and all it's sub processes are terminated");
+            log("Target process (" + pid + ") and all it's sub processes are now terminated");
             return "break";
         }
         else if (Date.now() >= startTime + delay_before_sigkill) {
             log((function () {
                 if (delay_before_sigkill === 0) {
-                    return "Immediately sending SIGKILL to " + runningPids.length + " remaining sub processes";
+                    return "Immediately sending SIGKILL to " + runningPids.length + " remaining sub processes of target process (" + pid + ")";
                 }
                 else {
                     return [
                         !!runningPids.find(function (_pid) { return _pid === pid; }) ?
-                            "Master process and " + (runningPids.length - 1) + " of it's sub processes" :
-                            runningPids.length + " sub processes of the master process",
+                            "Target process (" + pid + ") and " + (runningPids.length - 1) + " of it's sub processes" :
+                            runningPids.length + " sub processes of the target process (" + pid + ")",
                         "did not terminate in time, sending KILL signals."
                     ].join(" ");
                 }
@@ -1319,7 +1325,7 @@ exports.stopProcessSync = stopProcessSync;
  *      that beforeExitTask can take to complete before being killed by force by root process.
  *      After receiving USR2 signal or CTRL, the root process will be closed within [trop_timeout]+1000ms
  * -assert_unix_user: enforce that the main be called by a specific user.
- * -isQuiet?: set to true to disable process debug info logging on stdout. ( default false )
+ * -isQuiet?: set to true to disable process debug info logging on stdout. Prefixed by [ service ]. ( default false )
  * -doForwardDaemonStdout?: set to true to forward everything the daemon
  *      process write to stdout to the root process stdout. ( default true )
  * -daemon_unix_user?: User who should own the daemon process.
@@ -1374,13 +1380,13 @@ exports.stopProcessSync = stopProcessSync;
 function createService(params) {
     var _this = this;
     var log = (function () { });
-    var getLog = function (type) {
+    var getLog = function (prefix) {
         return (function () {
             var args = [];
             for (var _i = 0; _i < arguments.length; _i++) {
                 args[_i] = arguments[_i];
             }
-            return process.stdout.write(Buffer.from("[service] " + (type === "ROOT PROCESS" ? "( root process ) " : "") + util.format.apply(util, args) + "\n", "utf8"));
+            return process.stdout.write(Buffer.from("[service] ( " + prefix + " ) " + util.format.apply(util, args) + "\n", "utf8"));
         });
     };
     var rootProcess = params.rootProcess, daemonProcess = params.daemonProcess;
@@ -1409,7 +1415,7 @@ function createService(params) {
                         return [2 /*return*/];
                     }
                     if (!isQuiet) {
-                        log = getLog("ROOT PROCESS");
+                        log = getLog("root process");
                     }
                     stopProcessSync.log = log;
                     stopProcessSync(pidfile_path);
@@ -1455,20 +1461,20 @@ function createService(params) {
                                                             terminateDaemonProcess = function (daemonProcess) { return __awaiter(_this, void 0, void 0, function () {
                                                                 return __generator(this, function (_a) {
                                                                     return [2 /*return*/, new Promise(function (resolve) {
-                                                                            log("Attempt to gracefully terminate daemon process...");
+                                                                            log("Attempt to gracefully terminate daemon process PID: " + daemonProcess.pid + "...");
                                                                             daemonProcess.send(null);
                                                                             var timer = setTimeout(function () { return doStopAsap(); }, stop_timeout + 500);
                                                                             daemonProcess.once("error", function () { return doStopAsap(); });
                                                                             daemonProcess.once("close", function (childProcessExitCode) {
                                                                                 clearTimeout(timer);
-                                                                                log("Daemon process exited with code " + childProcessExitCode);
+                                                                                log("Daemon process PID: " + daemonProcess.pid + " exited with code " + childProcessExitCode);
                                                                                 if (typeof childProcessExitCode !== "number" || isNaN(childProcessExitCode)) {
                                                                                     childProcessExitCode = 1;
                                                                                 }
                                                                                 resolve(childProcessExitCode);
                                                                             });
                                                                             var doStopAsap = function () {
-                                                                                log("Daemon process not responding, force kill...");
+                                                                                log("Daemon process PID:" + daemonProcess.pid + " not responding, force kill...");
                                                                                 clearTimeout(timer);
                                                                                 daemonProcess.removeAllListeners("error");
                                                                                 daemonProcess.removeAllListeners("close");
@@ -1697,7 +1703,7 @@ function createService(params) {
                         }
                     })();
                     if (!isQuiet) {
-                        log = getLog("DAEMON PROCESS");
+                        log = getLog("daemon process " + daemon_number + "/" + daemon_count + ", PID: " + process.pid);
                     }
                     if (srv_name !== undefined) {
                         process.title = srv_name + " daemon " + (daemon_count === 1 ? "" : daemon_number);
@@ -1716,10 +1722,13 @@ function createService(params) {
                                     if (!!!beforeExitTask) return [3 /*break*/, 2];
                                     prBeforeExitTask = beforeExitTask(error);
                                     if (!(prBeforeExitTask instanceof Promise)) return [3 /*break*/, 2];
-                                    return [4 /*yield*/, safePr(prBeforeExitTask, stop_timeout + 700).then(function (error) {
+                                    return [4 /*yield*/, safePr(prBeforeExitTask, stop_timeout + 2000).then(function (error) {
                                             if (error instanceof Error) {
+                                                //NOTE: Throwing does not overwrite the exit code.
                                                 if (error.message === safePr.timeoutErrorMessage) {
-                                                    log("beforeExitTask took too much time to complete");
+                                                    //NOTE: Throwing string to not have the log of setProcessExitHandler
+                                                    //display the stack trace.
+                                                    throw "beforeExitTask took too much time to complete.";
                                                 }
                                                 else {
                                                     throw error;

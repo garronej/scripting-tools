@@ -1137,14 +1137,14 @@ export function setProcessExitHandler(
 ) {
 
     const log: typeof setProcessExitHandler.log = (...args) => setProcessExitHandler.log(
-        `===exitHandler=== ${util.format.apply(util, args)}`
+        `[ exit handler ] ${util.format.apply(util, args)}`
     );
 
     let handler: (exitCause: setProcessExitHandler.ExitCause) => any = async exitCause => {
 
         if (exitCause.type !== "NOTHING ELSE TO DO" && !shouldExitIf(exitCause)) {
 
-            log("Choosing to not terminating the process despite: ", exitCause);
+            log("Choosing ( c.f shouldExitIf ) not to terminate the process despite: ", exitCause);
 
             return;
 
@@ -1290,7 +1290,7 @@ export namespace setProcessExitHandler {
 
 /**
  * 
- * Stop a process by sending a specific signal to a master process id by it's PID.
+ * Stop a process by sending a specific signal to a target process id by it's PID.
  * When the function return the main process and all it's descendent processes are terminated.
  * 
  * The default signal is SIGUSR2 which is the signal used to gracefully terminate 
@@ -1314,7 +1314,7 @@ export function stopProcessSync(
 ) {
 
     const log: typeof setProcessExitHandler.log = (...args) => stopProcessSync.log(
-        `===stopProcessSync=== ${util.format.apply(util, args)}`
+        `[ stop process sync ] ${util.format.apply(util, args)}`
     );
 
     const cleanupRunfiles = () => {
@@ -1392,13 +1392,13 @@ export function stopProcessSync(
 
     if (stopProcessSync.isProcessRunning(pid)) {
 
-        log(`Sending ${signal} to master process (${pid})`);
+        log(`Sending ${signal} to target process (${pid})`);
 
         stopProcessSync.kill(pid, signal);
 
     } else {
 
-        log(`Master process is not running`);
+        log(`Target process (${pid}) is not running`);
 
     }
 
@@ -1411,7 +1411,7 @@ export function stopProcessSync(
 
         if (runningPids.length === 0) {
 
-            log("Master process and all it's sub processes are terminated");
+            log(`Target process (${pid}) and all it's sub processes are now terminated`);
 
             break;
 
@@ -1421,14 +1421,14 @@ export function stopProcessSync(
 
                 if (delay_before_sigkill === 0) {
 
-                    return `Immediately sending SIGKILL to ${runningPids.length} remaining sub processes`;
+                    return `Immediately sending SIGKILL to ${runningPids.length} remaining sub processes of target process (${pid})`;
 
                 } else {
 
                     return [
                         !!runningPids.find(_pid => _pid === pid) ?
-                            `Master process and ${runningPids.length - 1} of it's sub processes` :
-                            `${runningPids.length} sub processes of the master process`,
+                            `Target process (${pid}) and ${runningPids.length - 1} of it's sub processes` :
+                            `${runningPids.length} sub processes of the target process (${pid})`,
                         "did not terminate in time, sending KILL signals."
                     ].join(" ");
 
@@ -1657,7 +1657,7 @@ export namespace stopProcessSync {
  *      that beforeExitTask can take to complete before being killed by force by root process.
  *      After receiving USR2 signal or CTRL, the root process will be closed within [trop_timeout]+1000ms
  * -assert_unix_user: enforce that the main be called by a specific user.
- * -isQuiet?: set to true to disable process debug info logging on stdout. ( default false )
+ * -isQuiet?: set to true to disable process debug info logging on stdout. Prefixed by [ service ]. ( default false )
  * -doForwardDaemonStdout?: set to true to forward everything the daemon 
  *      process write to stdout to the root process stdout. ( default true )
  * -daemon_unix_user?: User who should own the daemon process. 
@@ -1736,9 +1736,9 @@ export function createService(params: {
 
     let log: typeof console.log = (()=>{});
 
-    const getLog= (type: "ROOT PROCESS" | "DAEMON PROCESS"): typeof console.log =>
+    const getLog= (prefix: string): typeof console.log =>
             ((...args) => process.stdout.write(
-                Buffer.from(`[service] ${type==="ROOT PROCESS"?"( root process ) ":""}${util.format.apply(util, args)}\n`, "utf8")
+                Buffer.from(`[service] ( ${prefix} ) ${util.format.apply(util, args)}\n`, "utf8")
             ));
 
     const {
@@ -1798,7 +1798,7 @@ export function createService(params: {
 
         if( !isQuiet ){
 
-            log= getLog("ROOT PROCESS");
+            log= getLog("root process");
 
         }
 
@@ -1861,7 +1861,7 @@ export function createService(params: {
 
                 const terminateDaemonProcess = async (daemonProcess: child_process.ChildProcess) => new Promise<number>(resolve => {
 
-                    log("Attempt to gracefully terminate daemon process...");
+                    log(`Attempt to gracefully terminate daemon process PID: ${daemonProcess.pid}...`);
 
                     daemonProcess.send(null);
 
@@ -1873,7 +1873,7 @@ export function createService(params: {
 
                         clearTimeout(timer);
 
-                        log(`Daemon process exited with code ${childProcessExitCode}`);
+                        log(`Daemon process PID: ${daemonProcess.pid} exited with code ${childProcessExitCode}`);
 
                         if (typeof childProcessExitCode !== "number" || isNaN(childProcessExitCode)) {
                             childProcessExitCode = 1;
@@ -1886,7 +1886,7 @@ export function createService(params: {
 
                     const doStopAsap = () => {
 
-                        log("Daemon process not responding, force kill...");
+                        log(`Daemon process PID:${daemonProcess.pid} not responding, force kill...`);
 
                         clearTimeout(timer);
 
@@ -2203,7 +2203,7 @@ export function createService(params: {
 
         if (!isQuiet) {
 
-            log = getLog("DAEMON PROCESS");
+            log = getLog(`daemon process ${daemon_number}/${daemon_count}, PID: ${process.pid}`);
 
         }
 
@@ -2235,14 +2235,17 @@ export function createService(params: {
                     //Set to something greater that what we would wait if the stop was triggered from the root process.
                     if (prBeforeExitTask instanceof Promise) {
 
-                        await safePr(prBeforeExitTask, stop_timeout + 700).then(
+                        await safePr(prBeforeExitTask, stop_timeout + 2000).then(
                             error => {
 
                                 if (error instanceof Error) {
 
+                                    //NOTE: Throwing does not overwrite the exit code.
                                     if (error.message === safePr.timeoutErrorMessage) {
 
-                                        log(`beforeExitTask took too much time to complete`);
+                                        //NOTE: Throwing string to not have the log of setProcessExitHandler
+                                        //display the stack trace.
+                                        throw "beforeExitTask took too much time to complete.";
 
                                     } else {
 
