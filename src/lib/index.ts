@@ -1653,11 +1653,11 @@ export namespace stopProcessSync {
  * -pidfile_path: where to store the pid of the root process.
  *      take to terminate after requested to exit gracefully.
  * -srv_name: Name of the service to overwrite the process names. (Default: not overwriting)
- * -stop_timeout: The maximum amount of time ( in ms ) the the root process 
+ * -stop_timeout: The maximum amount of time ( in ms ) the
  *      that beforeExitTask can take to complete before being killed by force by root process.
- *      After receiving USR2 signal or CTRL, the root process has will be closed within [trop_timeout]+1000ms
+ *      After receiving USR2 signal or CTRL, the root process will be closed within [trop_timeout]+1000ms
  * -assert_unix_user: enforce that the main be called by a specific user.
- * -isQuiet?: set to true to disable root process debug info logging on stdout. ( default false )
+ * -isQuiet?: set to true to disable process debug info logging on stdout. ( default false )
  * -doForwardDaemonStdout?: set to true to forward everything the daemon 
  *      process write to stdout to the root process stdout. ( default true )
  * -daemon_unix_user?: User who should own the daemon process. 
@@ -1734,6 +1734,12 @@ export function createService(params: {
     }>,
 }) {
 
+    let log: typeof console.log = (()=>{});
+
+    const getLog= (type: "ROOT PROCESS" | "DAEMON PROCESS"): typeof console.log =>
+            ((...args) => process.stdout.write(
+                Buffer.from(`[service] ${type==="ROOT PROCESS"?"( root process ) ":""}${util.format.apply(util, args)}\n`, "utf8")
+            ));
 
     const {
         rootProcess,
@@ -1790,12 +1796,11 @@ export function createService(params: {
 
         }
 
-        const log: typeof console.log = !isQuiet ?
-            ((...args) => process.stdout.write(
-                Buffer.from(`(root process) ${util.format.apply(util, args)}\n`, "utf8")
-            )) :
-            (() => { });
+        if( !isQuiet ){
 
+            log= getLog("ROOT PROCESS");
+
+        }
 
         stopProcessSync.log = log;
 
@@ -2003,13 +2008,20 @@ export function createService(params: {
 
         })();
 
-        const makeForkOptions = (daemon_number): child_process.ForkOptions => ({
+        const makeForkOptions = (daemon_number: number): child_process.ForkOptions => ({
             "uid": daemon_uid,
             "gid": daemon_gid,
             "silent": true,
             "cwd": daemon_cwd,
             "execPath": daemon_node_path,
-            "env": { ...process.env, daemon_number, daemon_count, srv_name }
+            "env": { 
+                ...process.env, 
+                daemon_number, 
+                daemon_count, 
+                srv_name, 
+                stop_timeout,
+                "isQuiet": isQuiet?"1":"0"
+            }
         });
 
         const forkDaemon = async (daemon_number: number) => {
@@ -2166,8 +2178,8 @@ export function createService(params: {
 
     const main_daemon = async () => {
 
-        const [daemon_number, daemon_count] =
-            ["daemon_number", "daemon_count"].map(key => {
+        const [daemon_number, daemon_count, stop_timeout, isQuiet] =
+            ["daemon_number", "daemon_count", "stop_timeout", "isQuiet"].map(key => {
                 const value = parseInt(process.env[key]!);
                 delete process.env[key];
                 return value;
@@ -2188,6 +2200,12 @@ export function createService(params: {
             }
 
         })();
+
+        if (!isQuiet) {
+
+            log = getLog("DAEMON PROCESS");
+
+        }
 
         if (srv_name !== undefined) {
 
@@ -2211,12 +2229,40 @@ export function createService(params: {
 
                 if (!!beforeExitTask) {
 
-                    await beforeExitTask(error);
+                    const prBeforeExitTask = beforeExitTask(error);
+
+                    //NOTE: The timeout should not be -1 when process.emit("beforeExit", process.exitCode=0);
+                    //Set to something greater that what we would wait if the stop was triggered from the root process.
+                    if (prBeforeExitTask instanceof Promise) {
+
+                        await safePr(prBeforeExitTask, stop_timeout + 700).then(
+                            error => {
+
+                                if (error instanceof Error) {
+
+                                    if (error.message === safePr.timeoutErrorMessage) {
+
+                                        log(`beforeExitTask took too much time to complete`);
+
+                                    } else {
+
+                                        throw error;
+
+                                    }
+
+                                }
+
+                            }
+                        );
+
+                    }
 
                 }
 
             }, -1, exitCause => exitCause.type !== "SIGNAL"
         );
+
+        setProcessExitHandler.log= log;
 
         launch();
 

@@ -1315,11 +1315,11 @@ exports.stopProcessSync = stopProcessSync;
  * -pidfile_path: where to store the pid of the root process.
  *      take to terminate after requested to exit gracefully.
  * -srv_name: Name of the service to overwrite the process names. (Default: not overwriting)
- * -stop_timeout: The maximum amount of time ( in ms ) the the root process
+ * -stop_timeout: The maximum amount of time ( in ms ) the
  *      that beforeExitTask can take to complete before being killed by force by root process.
- *      After receiving USR2 signal or CTRL, the root process has will be closed within [trop_timeout]+1000ms
+ *      After receiving USR2 signal or CTRL, the root process will be closed within [trop_timeout]+1000ms
  * -assert_unix_user: enforce that the main be called by a specific user.
- * -isQuiet?: set to true to disable root process debug info logging on stdout. ( default false )
+ * -isQuiet?: set to true to disable process debug info logging on stdout. ( default false )
  * -doForwardDaemonStdout?: set to true to forward everything the daemon
  *      process write to stdout to the root process stdout. ( default true )
  * -daemon_unix_user?: User who should own the daemon process.
@@ -1373,9 +1373,19 @@ exports.stopProcessSync = stopProcessSync;
  */
 function createService(params) {
     var _this = this;
+    var log = (function () { });
+    var getLog = function (type) {
+        return (function () {
+            var args = [];
+            for (var _i = 0; _i < arguments.length; _i++) {
+                args[_i] = arguments[_i];
+            }
+            return process.stdout.write(Buffer.from("[service] " + (type === "ROOT PROCESS" ? "( root process ) " : "") + util.format.apply(util, args) + "\n", "utf8"));
+        });
+    };
     var rootProcess = params.rootProcess, daemonProcess = params.daemonProcess;
     var main_root = function (main_js_path) { return __awaiter(_this, void 0, void 0, function () {
-        var _a, pidfile_path, srv_name, _stop_timeout, assert_unix_user, isQuiet, _doForwardDaemonStdout, daemon_unix_user, daemon_node_path, daemon_cwd, _daemon_restart_after_crash_delay, max_consecutive_restart, preForkTask, _daemon_count, stop_timeout, doForwardDaemonStdout, daemon_restart_after_crash_delay, daemon_count, log, daemonContexts, isTerminating, args, _b, daemon_uid, daemon_gid, makeForkOptions, forkDaemon, daemon_number;
+        var _a, pidfile_path, srv_name, _stop_timeout, assert_unix_user, isQuiet, _doForwardDaemonStdout, daemon_unix_user, daemon_node_path, daemon_cwd, _daemon_restart_after_crash_delay, max_consecutive_restart, preForkTask, _daemon_count, stop_timeout, doForwardDaemonStdout, daemon_restart_after_crash_delay, daemon_count, daemonContexts, isTerminating, args, _b, daemon_uid, daemon_gid, makeForkOptions, forkDaemon, daemon_number;
         var _this = this;
         return __generator(this, function (_c) {
             switch (_c.label) {
@@ -1398,15 +1408,9 @@ function createService(params) {
                         process.exit(1);
                         return [2 /*return*/];
                     }
-                    log = !isQuiet ?
-                        (function () {
-                            var args = [];
-                            for (var _i = 0; _i < arguments.length; _i++) {
-                                args[_i] = arguments[_i];
-                            }
-                            return process.stdout.write(Buffer.from("(root process) " + util.format.apply(util, args) + "\n", "utf8"));
-                        }) :
-                        (function () { });
+                    if (!isQuiet) {
+                        log = getLog("ROOT PROCESS");
+                    }
                     stopProcessSync.log = log;
                     stopProcessSync(pidfile_path);
                     if (fs.existsSync(pidfile_path)) {
@@ -1566,7 +1570,10 @@ function createService(params) {
                         "silent": true,
                         "cwd": daemon_cwd,
                         "execPath": daemon_node_path,
-                        "env": __assign({}, process.env, { daemon_number: daemon_number, daemon_count: daemon_count, srv_name: srv_name })
+                        "env": __assign({}, process.env, { daemon_number: daemon_number,
+                            daemon_count: daemon_count,
+                            srv_name: srv_name,
+                            stop_timeout: stop_timeout, "isQuiet": isQuiet ? "1" : "0" })
                     }); };
                     forkDaemon = function (daemon_number) { return __awaiter(_this, void 0, void 0, function () {
                         var context, error_5, daemonProcess;
@@ -1668,16 +1675,16 @@ function createService(params) {
         });
     }); };
     var main_daemon = function () { return __awaiter(_this, void 0, void 0, function () {
-        var _a, daemon_number, daemon_count, srv_name, _b, launch, beforeExitTask;
+        var _a, daemon_number, daemon_count, stop_timeout, isQuiet, srv_name, _b, launch, beforeExitTask;
         var _this = this;
         return __generator(this, function (_c) {
             switch (_c.label) {
                 case 0:
-                    _a = __read(["daemon_number", "daemon_count"].map(function (key) {
+                    _a = __read(["daemon_number", "daemon_count", "stop_timeout", "isQuiet"].map(function (key) {
                         var value = parseInt(process.env[key]);
                         delete process.env[key];
                         return value;
-                    }), 2), daemon_number = _a[0], daemon_count = _a[1];
+                    }), 4), daemon_number = _a[0], daemon_count = _a[1], stop_timeout = _a[2], isQuiet = _a[3];
                     srv_name = (function () {
                         var key = "srv_name";
                         var value = process.env[key];
@@ -1689,6 +1696,9 @@ function createService(params) {
                             return value;
                         }
                     })();
+                    if (!isQuiet) {
+                        log = getLog("DAEMON PROCESS");
+                    }
                     if (srv_name !== undefined) {
                         process.title = srv_name + " daemon " + (daemon_count === 1 ? "" : daemon_number);
                     }
@@ -1698,13 +1708,24 @@ function createService(params) {
                     process.once("message", function () { return process.emit("beforeExit", process.exitCode = 0); });
                     process.once("disconnect", function () { return process.exit(1); });
                     setProcessExitHandler(function (exitCause) { return __awaiter(_this, void 0, void 0, function () {
-                        var error;
+                        var error, prBeforeExitTask;
                         return __generator(this, function (_a) {
                             switch (_a.label) {
                                 case 0:
                                     error = exitCause.type === "EXCEPTION" ? exitCause.error : undefined;
                                     if (!!!beforeExitTask) return [3 /*break*/, 2];
-                                    return [4 /*yield*/, beforeExitTask(error)];
+                                    prBeforeExitTask = beforeExitTask(error);
+                                    if (!(prBeforeExitTask instanceof Promise)) return [3 /*break*/, 2];
+                                    return [4 /*yield*/, safePr(prBeforeExitTask, stop_timeout + 700).then(function (error) {
+                                            if (error instanceof Error) {
+                                                if (error.message === safePr.timeoutErrorMessage) {
+                                                    log("beforeExitTask took too much time to complete");
+                                                }
+                                                else {
+                                                    throw error;
+                                                }
+                                            }
+                                        })];
                                 case 1:
                                     _a.sent();
                                     _a.label = 2;
@@ -1712,6 +1733,7 @@ function createService(params) {
                             }
                         });
                     }); }, -1, function (exitCause) { return exitCause.type !== "SIGNAL"; });
+                    setProcessExitHandler.log = log;
                     launch();
                     return [2 /*return*/];
             }

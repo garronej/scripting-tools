@@ -387,11 +387,11 @@ export declare namespace stopProcessSync {
  * -pidfile_path: where to store the pid of the root process.
  *      take to terminate after requested to exit gracefully.
  * -srv_name: Name of the service to overwrite the process names. (Default: not overwriting)
- * -stop_timeout: The maximum amount of time ( in ms ) the the root process
+ * -stop_timeout: The maximum amount of time ( in ms ) the
  *      that beforeExitTask can take to complete before being killed by force by root process.
- *      After receiving USR2 signal or CTRL, the root process has will be closed within [trop_timeout]+1000ms
+ *      After receiving USR2 signal or CTRL, the root process will be closed within [trop_timeout]+1000ms
  * -assert_unix_user: enforce that the main be called by a specific user.
- * -isQuiet?: set to true to disable root process debug info logging on stdout. ( default false )
+ * -isQuiet?: set to true to disable process debug info logging on stdout. ( default false )
  * -doForwardDaemonStdout?: set to true to forward everything the daemon
  *      process write to stdout to the root process stdout. ( default true )
  * -daemon_unix_user?: User who should own the daemon process.
