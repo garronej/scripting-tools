@@ -463,28 +463,47 @@ export function exit_if_not_root(): void {
  * 
  * @param module_name The name of the module.
  * @param module_dir_path Path to the root of the module ( will search in ./node_modules ).
+ * 
+ * Throw if the module is not found.
+ * 
  */
 export function find_module_path(
     module_name: string,
     module_dir_path: string
 ): string {
 
-    const cmd = [
-        `find ${path.join(module_dir_path, "node_modules")}`,
-        `-type f`,
-        `-path \\*/node_modules/${module_name}/package.json`,
-        `-exec dirname {} \\;`
-    ].join(" ");
+        if (path.basename(module_dir_path) === module_name) {
+            return module_dir_path;
+        }
 
-    const match = execSyncNoCmdTrace(cmd, { "stdio": "pipe" }).slice(0, -1).split("\n");
+        const node_module_path = path.join(module_dir_path, "node_modules");
 
-    if (!match.length) {
-        throw new Error(`${module_name} not found in ${module_dir_path}`);
-    } else {
-        return match.sort((a, b) => a.length - b.length)[0];
-    }
+        if (!fs.existsSync(node_module_path)) {
+            throw new Error(`No node_modules in ${module_dir_path}`);
+        }
+
+        const [ out ]= fs.readdirSync(node_module_path)
+            .map(file_name => path.join(node_module_path, file_name))
+            .filter(file_path => fs.lstatSync(file_path).isDirectory())
+            .filter(dir_path => fs.existsSync(path.join(dir_path, "package.json")))
+            .map(module_dir_path =>{ 
+                try{ 
+                    return find_module_path(module_name, module_dir_path) ;
+                }catch{ 
+                    return "";
+                }
+            })
+            .filter(module_dir_path => !!module_dir_path)
+            .sort((a, b) => a.length - b.length);
+
+        if( out === undefined ){
+            throw new Error(`module ${module_name} not installed in ${module_dir_path}`);
+        }
+
+        return out;
 
 }
+
 
 /**
  * 
@@ -1734,12 +1753,12 @@ export function createService(params: {
     }>,
 }) {
 
-    let log: typeof console.log = (()=>{});
+    let log: typeof console.log = (() => { });
 
-    const getLog= (prefix: string): typeof console.log =>
-            ((...args) => process.stdout.write(
-                Buffer.from(`[service] ( ${prefix} ) ${util.format.apply(util, args)}\n`, "utf8")
-            ));
+    const getLog = (prefix: string): typeof console.log =>
+        ((...args) => process.stdout.write(
+            Buffer.from(`[service] ( ${prefix} ) ${util.format.apply(util, args)}\n`, "utf8")
+        ));
 
     const {
         rootProcess,
@@ -1796,9 +1815,9 @@ export function createService(params: {
 
         }
 
-        if( !isQuiet ){
+        if (!isQuiet) {
 
-            log= getLog("root process");
+            log = getLog("root process");
 
         }
 
@@ -2014,13 +2033,13 @@ export function createService(params: {
             "silent": true,
             "cwd": daemon_cwd,
             "execPath": daemon_node_path,
-            "env": { 
-                ...process.env, 
-                daemon_number, 
-                daemon_count, 
-                srv_name, 
+            "env": {
+                ...process.env,
+                daemon_number,
+                daemon_count,
+                srv_name,
                 stop_timeout,
-                "isQuiet": isQuiet?"1":"0"
+                "isQuiet": isQuiet ? "1" : "0"
             }
         });
 
@@ -2265,7 +2284,7 @@ export function createService(params: {
             }, -1, exitCause => exitCause.type !== "SIGNAL"
         );
 
-        setProcessExitHandler.log= log;
+        setProcessExitHandler.log = log;
 
         launch();
 

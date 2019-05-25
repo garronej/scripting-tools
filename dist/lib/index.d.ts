@@ -96,6 +96,9 @@ export declare function exit_if_not_root(): void;
  *
  * @param module_name The name of the module.
  * @param module_dir_path Path to the root of the module ( will search in ./node_modules ).
+ *
+ * Throw if the module is not found.
+ *
  */
 export declare function find_module_path(module_name: string, module_dir_path: string): string;
 /**

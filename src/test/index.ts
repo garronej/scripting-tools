@@ -7,6 +7,12 @@ process.once("unhandledRejection", error => { throw error; });
 
 (async () => {
 
+    console.assert(
+        scriptLib.find_module_path("typescript", path.join(__dirname, "../.."))
+        ===
+        path.join(__dirname, "..", "..", "node_modules/typescript")
+    );
+
     (()=>{
 
         const obj= {};
@@ -83,13 +89,6 @@ process.once("unhandledRejection", error => { throw error; });
         ===
         JSON.parse(await scriptLib.web_get("https://raw.githubusercontent.com/garronej/scripting-tools/master/package.json"))["name"]
     );
-
-    console.assert(
-        scriptLib.find_module_path("typescript", path.join(__dirname, "../.."))
-        ===
-        path.join(__dirname, "..", "..", "node_modules/typescript")
-    );
-
 
     const dir_path = "/var/tmp/scripting-tools-tests";
     const dir_path_copy = path.join(dir_path, "..", `${path.basename(dir_path)}-copy`);

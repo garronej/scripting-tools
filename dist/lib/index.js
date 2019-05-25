@@ -58,16 +58,6 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
         if (op[0] & 5) throw op[1]; return { value: op[0] ? op[1] : void 0, done: true };
     }
 };
-var __values = (this && this.__values) || function (o) {
-    var m = typeof Symbol === "function" && o[Symbol.iterator], i = 0;
-    if (m) return m.call(o);
-    return {
-        next: function () {
-            if (o && i >= o.length) o = void 0;
-            return { value: o && o[i++], done: !o };
-        }
-    };
-};
 var __read = (this && this.__read) || function (o, n) {
     var m = typeof Symbol === "function" && o[Symbol.iterator];
     if (!m) return o;
@@ -83,6 +73,16 @@ var __read = (this && this.__read) || function (o, n) {
         finally { if (e) throw e.error; }
     }
     return ar;
+};
+var __values = (this && this.__values) || function (o) {
+    var m = typeof Symbol === "function" && o[Symbol.iterator], i = 0;
+    if (m) return m.call(o);
+    return {
+        next: function () {
+            if (o && i >= o.length) o = void 0;
+            return { value: o && o[i++], done: !o };
+        }
+    };
 };
 var __spread = (this && this.__spread) || function () {
     for (var ar = [], i = 0; i < arguments.length; i++) ar = ar.concat(__read(arguments[i]));
@@ -416,21 +416,36 @@ exports.exit_if_not_root = exit_if_not_root;
  *
  * @param module_name The name of the module.
  * @param module_dir_path Path to the root of the module ( will search in ./node_modules ).
+ *
+ * Throw if the module is not found.
+ *
  */
 function find_module_path(module_name, module_dir_path) {
-    var cmd = [
-        "find " + path.join(module_dir_path, "node_modules"),
-        "-type f",
-        "-path \\*/node_modules/" + module_name + "/package.json",
-        "-exec dirname {} \\;"
-    ].join(" ");
-    var match = execSyncNoCmdTrace(cmd, { "stdio": "pipe" }).slice(0, -1).split("\n");
-    if (!match.length) {
-        throw new Error(module_name + " not found in " + module_dir_path);
+    if (path.basename(module_dir_path) === module_name) {
+        return module_dir_path;
     }
-    else {
-        return match.sort(function (a, b) { return a.length - b.length; })[0];
+    var node_module_path = path.join(module_dir_path, "node_modules");
+    if (!fs.existsSync(node_module_path)) {
+        throw new Error("No node_modules in " + module_dir_path);
     }
+    var _a = __read(fs.readdirSync(node_module_path)
+        .map(function (file_name) { return path.join(node_module_path, file_name); })
+        .filter(function (file_path) { return fs.lstatSync(file_path).isDirectory(); })
+        .filter(function (dir_path) { return fs.existsSync(path.join(dir_path, "package.json")); })
+        .map(function (module_dir_path) {
+        try {
+            return find_module_path(module_name, module_dir_path);
+        }
+        catch (_a) {
+            return "";
+        }
+    })
+        .filter(function (module_dir_path) { return !!module_dir_path; })
+        .sort(function (a, b) { return a.length - b.length; }), 1), out = _a[0];
+    if (out === undefined) {
+        throw new Error("module " + module_name + " not installed in " + module_dir_path);
+    }
+    return out;
 }
 exports.find_module_path = find_module_path;
 /**
