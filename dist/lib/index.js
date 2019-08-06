@@ -571,11 +571,12 @@ exports.fs_move = fs_move;
  */
 function download_and_extract_tarball(url, dest_dir_path, mode) {
     return __awaiter(this, void 0, void 0, function () {
-        var e_1, _a, _b, exec, onSuccess, onError, tarball_dir_path, tarball_path, error_3, _c, _d, name;
+        var _a, exec, onSuccess, onError, tarball_dir_path, tarball_path, error_3, _b, _c, name;
+        var e_1, _d;
         return __generator(this, function (_e) {
             switch (_e.label) {
                 case 0:
-                    _b = start_long_running_process("Downloading " + url + " and extracting to " + dest_dir_path), exec = _b.exec, onSuccess = _b.onSuccess, onError = _b.onError;
+                    _a = start_long_running_process("Downloading " + url + " and extracting to " + dest_dir_path), exec = _a.exec, onSuccess = _a.onSuccess, onError = _a.onError;
                     tarball_dir_path = (function () {
                         var hash = crypto.createHash("sha1");
                         hash.write(url);
@@ -609,15 +610,15 @@ function download_and_extract_tarball(url, dest_dir_path, mode) {
                     _e.sent();
                     if (!(mode === "MERGE")) return [3 /*break*/, 10];
                     try {
-                        for (_c = __values(fs_ls(tarball_dir_path)), _d = _c.next(); !_d.done; _d = _c.next()) {
-                            name = _d.value;
+                        for (_b = __values(fs_ls(tarball_dir_path)), _c = _b.next(); !_c.done; _c = _b.next()) {
+                            name = _c.value;
                             fs_move("MOVE", tarball_dir_path, dest_dir_path, name);
                         }
                     }
                     catch (e_1_1) { e_1 = { error: e_1_1 }; }
                     finally {
                         try {
-                            if (_d && !_d.done && (_a = _c.return)) _a.call(_c);
+                            if (_c && !_c.done && (_d = _b.return)) _d.call(_b);
                         }
                         finally { if (e_1) throw e_1.error; }
                     }
@@ -882,7 +883,7 @@ exports.safePr = safePr;
  *
  * The task function will always be called before the process stop
  * unless process.exit is explicitly called somewhere or
- * if the process receive any signal other * than the ones specified
+ * if the process receive any signal other than the ones specified
  * in the ExitCause.Signal["signal"] type.
  *
  * The process may stop for tree reasons:
@@ -928,10 +929,10 @@ exports.safePr = safePr;
  *
  */
 function setProcessExitHandler(task, timeout, shouldExitIf) {
+    var e_2, _a, e_3, _b;
     var _this = this;
     if (timeout === void 0) { timeout = 4000; }
     if (shouldExitIf === void 0) { shouldExitIf = function () { return true; }; }
-    var e_2, _a, e_3, _b;
     var log = function () {
         var args = [];
         for (var _i = 0; _i < arguments.length; _i++) {
@@ -1048,20 +1049,23 @@ exports.setProcessExitHandler = setProcessExitHandler;
 })(setProcessExitHandler = exports.setProcessExitHandler || (exports.setProcessExitHandler = {}));
 /**
  *
- * Stop a process by sending a specific signal to a target process id by it's PID.
+ * Stop a process by sending a specific signal to a target process.
  * When the function return the main process and all it's descendent processes are terminated.
  *
  * The default signal is SIGUSR2 which is the signal used to gracefully terminate
  * Process created by the createService function.
  *
  * Optionally runfiles_path can be provided to define a set of files
- * that should be suppressed once before returning.
+ * that should be suppressed before returning.
  *
  * If pid is provided under the form of a pidfile path it will
  * be added to the runfiles set.
  *
  * If all the processes does not terminate within [delay_before_sigkill]ms
  * (default 50000) then KILL signal will be sent to all processes still alive.
+ *
+ * If the PID provided is the same that the PID of the process running the function
+ * PidMatchCurrentProcessError will be thrown.
  *
  */
 function stopProcessSync(pidfile_path_or_pid, signal, delay_before_sigkill, runfiles_path) {
@@ -1123,6 +1127,9 @@ function stopProcessSync(pidfile_path_or_pid, signal, delay_before_sigkill, runf
             return;
         }
     }
+    if (pid === process.pid) {
+        throw new stopProcessSync.PidMatchCurrentProcessError(cleanupRunfiles);
+    }
     var pids = __spread(stopProcessSync.getSubProcesses(pid, "FULL PROCESS TREE"), [
         pid
     ]);
@@ -1156,7 +1163,7 @@ function stopProcessSync(pidfile_path_or_pid, signal, delay_before_sigkill, runf
                 }
             })());
             try {
-                for (var runningPids_1 = __values(runningPids), runningPids_1_1 = runningPids_1.next(); !runningPids_1_1.done; runningPids_1_1 = runningPids_1.next()) {
+                for (var runningPids_1 = (e_5 = void 0, __values(runningPids)), runningPids_1_1 = runningPids_1.next(); !runningPids_1_1.done; runningPids_1_1 = runningPids_1.next()) {
                     var pid_1 = runningPids_1_1.value;
                     stopProcessSync.kill(pid_1, "SIGKILL");
                 }
@@ -1181,6 +1188,18 @@ function stopProcessSync(pidfile_path_or_pid, signal, delay_before_sigkill, runf
 }
 exports.stopProcessSync = stopProcessSync;
 (function (stopProcessSync) {
+    var PidMatchCurrentProcessError = /** @class */ (function (_super) {
+        __extends(PidMatchCurrentProcessError, _super);
+        function PidMatchCurrentProcessError(cleanupRunfiles) {
+            var _newTarget = this.constructor;
+            var _this = _super.call(this, "StopProcessSync error, provided PID is the PID of the current process") || this;
+            _this.cleanupRunfiles = cleanupRunfiles;
+            Object.setPrototypeOf(_this, _newTarget.prototype);
+            return _this;
+        }
+        return PidMatchCurrentProcessError;
+    }(Error));
+    stopProcessSync.PidMatchCurrentProcessError = PidMatchCurrentProcessError;
     /**
      * Stopping process As Soon As Possible,
      * stopProcessSync with signal SIGKILL and timeout 0
@@ -1433,7 +1452,15 @@ function createService(params) {
                         log = getLog("root process");
                     }
                     stopProcessSync.log = log;
-                    stopProcessSync(pidfile_path);
+                    try {
+                        stopProcessSync(pidfile_path);
+                    }
+                    catch (error) {
+                        if (!(error instanceof stopProcessSync.PidMatchCurrentProcessError)) {
+                            throw error;
+                        }
+                        error.cleanupRunfiles();
+                    }
                     if (fs.existsSync(pidfile_path)) {
                         throw Error("Other instance launched simultaneously");
                     }
@@ -1468,7 +1495,8 @@ function createService(params) {
                                     isTerminating = true;
                                     return [4 /*yield*/, (function terminateAllChildProcesses() {
                                             return __awaiter(this, void 0, void 0, function () {
-                                                var e_9, _a, terminateDaemonProcess, terminatePreForkChildProcessesSafeCall, tasks, _loop_3, _b, _c, _d, daemonProcess_1, terminatePreForkChildProcesses;
+                                                var terminateDaemonProcess, terminatePreForkChildProcessesSafeCall, tasks, _loop_3, _a, _b, _c, daemonProcess_1, terminatePreForkChildProcesses;
+                                                var e_9, _d;
                                                 var _this = this;
                                                 return __generator(this, function (_e) {
                                                     switch (_e.label) {
@@ -1532,15 +1560,15 @@ function createService(params) {
                                                                     .then(function (result) { return result === "SUCCESS" ? resolve(0) : resolve(1); }); })) : terminateDaemonProcess(daemonProcess_1);
                                                             };
                                                             try {
-                                                                for (_b = __values(daemonContexts.values()), _c = _b.next(); !_c.done; _c = _b.next()) {
-                                                                    _d = _c.value, daemonProcess_1 = _d.daemonProcess, terminatePreForkChildProcesses = _d.terminatePreForkChildProcesses;
+                                                                for (_a = __values(daemonContexts.values()), _b = _a.next(); !_b.done; _b = _a.next()) {
+                                                                    _c = _b.value, daemonProcess_1 = _c.daemonProcess, terminatePreForkChildProcesses = _c.terminatePreForkChildProcesses;
                                                                     _loop_3(daemonProcess_1, terminatePreForkChildProcesses);
                                                                 }
                                                             }
                                                             catch (e_9_1) { e_9 = { error: e_9_1 }; }
                                                             finally {
                                                                 try {
-                                                                    if (_c && !_c.done && (_a = _b.return)) _a.call(_b);
+                                                                    if (_b && !_b.done && (_d = _a.return)) _d.call(_a);
                                                                 }
                                                                 finally { if (e_9) throw e_9.error; }
                                                             }

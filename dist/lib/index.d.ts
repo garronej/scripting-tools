@@ -248,7 +248,7 @@ export declare namespace safePr {
  *
  * The task function will always be called before the process stop
  * unless process.exit is explicitly called somewhere or
- * if the process receive any signal other * than the ones specified
+ * if the process receive any signal other than the ones specified
  * in the ExitCause.Signal["signal"] type.
  *
  * The process may stop for tree reasons:
@@ -321,14 +321,14 @@ export declare namespace setProcessExitHandler {
 }
 /**
  *
- * Stop a process by sending a specific signal to a target process id by it's PID.
+ * Stop a process by sending a specific signal to a target process.
  * When the function return the main process and all it's descendent processes are terminated.
  *
  * The default signal is SIGUSR2 which is the signal used to gracefully terminate
  * Process created by the createService function.
  *
  * Optionally runfiles_path can be provided to define a set of files
- * that should be suppressed once before returning.
+ * that should be suppressed before returning.
  *
  * If pid is provided under the form of a pidfile path it will
  * be added to the runfiles set.
@@ -336,9 +336,16 @@ export declare namespace setProcessExitHandler {
  * If all the processes does not terminate within [delay_before_sigkill]ms
  * (default 50000) then KILL signal will be sent to all processes still alive.
  *
+ * If the PID provided is the same that the PID of the process running the function
+ * PidMatchCurrentProcessError will be thrown.
+ *
  */
 export declare function stopProcessSync(pidfile_path_or_pid: string | number, signal?: NodeJS.Signals, delay_before_sigkill?: number, runfiles_path?: string[]): void;
 export declare namespace stopProcessSync {
+    class PidMatchCurrentProcessError extends Error {
+        readonly cleanupRunfiles: () => void;
+        constructor(cleanupRunfiles: () => void);
+    }
     /**
      * Stopping process As Soon As Possible,
      * stopProcessSync with signal SIGKILL and timeout 0

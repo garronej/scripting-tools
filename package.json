@@ -1,12 +1,11 @@
 {
   "name": "scripting-tools",
-  "version": "0.19.8",
+  "version": "0.19.9",
   "description": "Tools to build shell scripts with node",
   "main": "./dist/lib/index.js",
   "types": "./dist/lib/index.d.ts",
   "scripts": {
     "tsc": "node ./node_modules/typescript/bin/tsc -p ./tsconfig.json",
-    "tsc-w": "node ./node_modules/typescript/bin/tsc -w -p ./tsconfig.json",
     "test": "node dist/test/index"
   },
   "repository": {
