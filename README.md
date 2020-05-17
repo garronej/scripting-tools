@@ -209,14 +209,6 @@ export declare namespace unixUser {
 export { get_caller_file_path } from "./get_caller_file_path";
 /**
  *
- * DO NOT USE TEST PURPOSE ONLY
- *
- * return __filename
- *
- */
-export declare function get__filename(): string;
-/**
- *
  * Equivalent to the pattern $() in bash.
  * Strip final LF if present.
  * If cmd fail no error is thrown, an empty string is returned.
