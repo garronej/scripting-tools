@@ -1,7 +1,7 @@
 {
   "name": "scripting-tools",
-  "version": "0.19.11",
-  "description": "Tools to build shell scripts with node",
+  "version": "0.19.12",
+  "description": "A toolbox that help scripting with Node.",
   "main": "./dist/lib/index.js",
   "types": "./dist/lib/index.d.ts",
   "scripts": {

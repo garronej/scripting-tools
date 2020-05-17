@@ -1,4 +1,10 @@
 # scripting-tools
+
+A toolbox that help scripting with Node.
+
+It is mainly a proxy to ``child_process``.
+
+
 ````typescript
 /**
  * After this function is called every call to execSync
