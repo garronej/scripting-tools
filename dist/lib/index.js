@@ -430,8 +430,7 @@ function find_module_path(module_name, module_dir_path) {
     }
     var _a = __read(fs.readdirSync(node_module_path)
         .map(function (file_name) { return path.join(node_module_path, file_name); })
-        .filter(function (file_path) { return fs.lstatSync(file_path).isDirectory(); })
-        .filter(function (dir_path) { return fs.existsSync(path.join(dir_path, "package.json")); })
+        .filter(function (file_or_dir_path) { return fs.existsSync(path.join(file_or_dir_path, "package.json")); })
         .map(function (module_dir_path) {
         try {
             return find_module_path(module_name, module_dir_path);

@@ -484,8 +484,7 @@ export function find_module_path(
 
         const [ out ]= fs.readdirSync(node_module_path)
             .map(file_name => path.join(node_module_path, file_name))
-            .filter(file_path => fs.lstatSync(file_path).isDirectory())
-            .filter(dir_path => fs.existsSync(path.join(dir_path, "package.json")))
+            .filter(file_or_dir_path => fs.existsSync(path.join(file_or_dir_path, "package.json")))
             .map(module_dir_path =>{ 
                 try{ 
                     return find_module_path(module_name, module_dir_path) ;
