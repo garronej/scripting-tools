@@ -48,7 +48,9 @@ process.once("unhandledRejection", error => { throw error; });
 
     console.log("PASS get_caller_file_path");
 
-    const [p_wget, p_node] = ["/tmp/v_wget", "/tmp/v_node"];
+    const temp_directory = process.platform === "win32" ? "." : "/tmp"
+
+    const [p_wget, p_node] = ["v_wget", "v_node"].map(s => path.join(temp_directory, s));
 
     scriptLib.execSync(`rm -f ${p_wget} ${p_node}`);
 
