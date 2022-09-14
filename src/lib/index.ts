@@ -472,7 +472,7 @@ export function find_module_path(
     module_dir_path: string
 ): string {
 
-        if (path.basename(module_dir_path) === module_name) {
+        if (module_dir_path.endsWith(module_name)) {
             return module_dir_path;
         }
 
@@ -483,7 +483,15 @@ export function find_module_path(
         }
 
         const [ out ]= fs.readdirSync(node_module_path)
-            .map(file_name => path.join(node_module_path, file_name))
+            .filter(file_or_dir_name=> fs.statSync(path.join(node_module_path, file_or_dir_name)).isDirectory)
+            .map(dir_name => 
+                 !dir_name.startsWith("@") ? 
+                    [path.join(node_module_path, dir_name)] : 
+                    fs.readdirSync(path.join(node_module_path, dir_name))
+                        .map(file_or_dir_name => path.join(node_module_path, dir_name, file_or_dir_name))
+                        .filter(file_or_dir_path=> fs.statSync(file_or_dir_path).isDirectory)
+            )
+            .reduce((prev, curr)=> [...prev, ...curr], [])
             .filter(file_or_dir_path => fs.existsSync(path.join(file_or_dir_path, "package.json")))
             .map(module_dir_path =>{ 
                 try{ 

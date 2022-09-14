@@ -13,6 +13,12 @@ process.once("unhandledRejection", error => { throw error; });
         path.join(__dirname, "..", "..", "node_modules/typescript")
     );
 
+    console.assert(
+        scriptLib.find_module_path("@types/node", path.join(__dirname, "../.."))
+        ===
+        path.join(__dirname, "..", "..", "node_modules/@types/node")
+    );
+
     (()=>{
 
         const obj= {};

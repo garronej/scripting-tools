@@ -74,6 +74,10 @@ var __read = (this && this.__read) || function (o, n) {
     }
     return ar;
 };
+var __spread = (this && this.__spread) || function () {
+    for (var ar = [], i = 0; i < arguments.length; i++) ar = ar.concat(__read(arguments[i]));
+    return ar;
+};
 var __values = (this && this.__values) || function (o) {
     var m = typeof Symbol === "function" && o[Symbol.iterator], i = 0;
     if (m) return m.call(o);
@@ -83,10 +87,6 @@ var __values = (this && this.__values) || function (o) {
             return { value: o && o[i++], done: !o };
         }
     };
-};
-var __spread = (this && this.__spread) || function () {
-    for (var ar = [], i = 0; i < arguments.length; i++) ar = ar.concat(__read(arguments[i]));
-    return ar;
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 var child_process = require("child_process");
@@ -421,7 +421,7 @@ exports.exit_if_not_root = exit_if_not_root;
  *
  */
 function find_module_path(module_name, module_dir_path) {
-    if (path.basename(module_dir_path) === module_name) {
+    if (module_dir_path.endsWith(module_name)) {
         return module_dir_path;
     }
     var node_module_path = path.join(module_dir_path, "node_modules");
@@ -429,7 +429,15 @@ function find_module_path(module_name, module_dir_path) {
         throw new Error("No node_modules in " + module_dir_path);
     }
     var _a = __read(fs.readdirSync(node_module_path)
-        .map(function (file_name) { return path.join(node_module_path, file_name); })
+        .filter(function (file_or_dir_name) { return fs.statSync(path.join(node_module_path, file_or_dir_name)).isDirectory; })
+        .map(function (dir_name) {
+        return !dir_name.startsWith("@") ?
+            [path.join(node_module_path, dir_name)] :
+            fs.readdirSync(path.join(node_module_path, dir_name))
+                .map(function (file_or_dir_name) { return path.join(node_module_path, dir_name, file_or_dir_name); })
+                .filter(function (file_or_dir_path) { return fs.statSync(file_or_dir_path).isDirectory; });
+    })
+        .reduce(function (prev, curr) { return __spread(prev, curr); }, [])
         .filter(function (file_or_dir_path) { return fs.existsSync(path.join(file_or_dir_path, "package.json")); })
         .map(function (module_dir_path) {
         try {
