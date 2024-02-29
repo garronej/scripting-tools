@@ -32,12 +32,24 @@ namespace traceCmdIfEnabled {
     export let enabled = false;
 }
 
+const validUnixUserRegex = /^[a-z_]([a-z0-9_-]{0,31}|[a-z0-9_-]{0,30}\$)$/;
 
 export function get_uid(unix_user: string){
+
+    if( !validUnixUserRegex.test(unix_user) ){
+        throw new Error(`Invalid unix user name: ${unix_user}`);
+    }
+
+
     return parseInt(sh_eval(`id -u ${unix_user}`));
 }
 
 export function get_gid(unix_user: string){
+
+    if( !validUnixUserRegex.test(unix_user) ){
+        throw new Error(`Invalid unix user name: ${unix_user}`);
+    }
+
     return parseInt(sh_eval(`id -g ${unix_user}`));
 }
 

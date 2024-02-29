@@ -115,11 +115,18 @@ function traceCmdIfEnabled(cmd, options) {
 (function (traceCmdIfEnabled) {
     traceCmdIfEnabled.enabled = false;
 })(traceCmdIfEnabled || (traceCmdIfEnabled = {}));
+var validUnixUserRegex = /^[a-z_]([a-z0-9_-]{0,31}|[a-z0-9_-]{0,30}\$)$/;
 function get_uid(unix_user) {
+    if (!validUnixUserRegex.test(unix_user)) {
+        throw new Error("Invalid unix user name: " + unix_user);
+    }
     return parseInt(sh_eval("id -u " + unix_user));
 }
 exports.get_uid = get_uid;
 function get_gid(unix_user) {
+    if (!validUnixUserRegex.test(unix_user)) {
+        throw new Error("Invalid unix user name: " + unix_user);
+    }
     return parseInt(sh_eval("id -g " + unix_user));
 }
 exports.get_gid = get_gid;
