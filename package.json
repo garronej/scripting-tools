@@ -1,6 +1,6 @@
 {
   "name": "scripting-tools",
-  "version": "0.19.15",
+  "version": "0.19.16",
   "description": "A toolbox that help scripting with Node.",
   "main": "./dist/lib/index.js",
   "types": "./dist/lib/index.d.ts",
